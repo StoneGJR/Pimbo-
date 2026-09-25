@@ -18,10 +18,20 @@
 
       <button id="door-handle" class="hotspot" type="button" aria-label="Abrir a porta"></button>
       <div id="interaction-hint" class="interaction-hint hidden">Abrir</div>
+
+      <button id="back-button" class="nav-arrow hidden" type="button" aria-label="Voltar para a cena anterior">‹</button>
+
       <div id="scene-message" class="scene-message hidden"></div>
       <div id="scene-overlay" aria-hidden="true"></div>
     </section>
   </main>
+
+  <!-- Áudios reais: tocar após o clique inicial evita bloqueios de autoplay. -->
+  <audio id="night-audio" src="assets/sounds/night-ambient.wav" preload="auto" loop></audio>
+  <audio id="handle-audio" src="assets/sounds/door-handle.wav" preload="auto"></audio>
+  <audio id="open-audio" src="assets/sounds/door-open.wav" preload="auto"></audio>
+  <audio id="close-audio" src="assets/sounds/door-close.wav" preload="auto"></audio>
+  <audio id="kitchen-audio" src="assets/sounds/kitchen-ambient.wav" preload="auto" loop></audio>
 
   <script src="game.js"></script>
 </body>
