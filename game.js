@@ -6,6 +6,7 @@ const sceneImage = document.getElementById('scene-image');
 const sceneOverlay = document.getElementById('scene-overlay');
 const interactionHint = document.getElementById('interaction-hint');
 const sceneMessage = document.getElementById('scene-message');
+const doorHandle = document.getElementById('door-handle');
 
 const story = [
   { text: '23:47', pauseAfter: 900 },
@@ -19,30 +20,88 @@ const story = [
   { text: 'O endereço me trouxe até aqui.', pauseAfter: 1800 }
 ];
 
+const AUDIO_FILES = {
+  handle: 'assets/sounds/door-handle.wav',
+  open: 'assets/sounds/door-open.wav',
+  close: 'assets/sounds/door-close.wav',
+  kitchen: 'assets/sounds/kitchen-ambient.wav'
+};
+
 const state = {
   audioContext: null,
   started: false,
-  currentScene: 1,
   transitioning: false,
-  kitchenAmbient: null,
-  kitchenAmbientStarted: false
+  audioBuffers: {},
+  kitchenSource: null,
+  kitchenGain: null,
+  nightNoiseSource: null,
+  nightNoiseGain: null,
+  nightNoiseFilter: null,
+  ambientTimers: [],
+  doorUnlocked: false
 };
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
 
 function initAudio() {
   if (state.audioContext) return;
-  state.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextClass) return;
+  state.audioContext = new AudioContextClass();
 }
 
 async function resumeAudio() {
-  if (!state.audioContext) initAudio();
-  if (state.audioContext.state === 'suspended') {
-    await state.audioContext.resume();
+  initAudio();
+  if (!state.audioContext) return;
+  if (state.audioContext.state !== 'running') {
+    try { await state.audioContext.resume(); } catch (_) {}
   }
+  state.doorUnlocked = state.audioContext.state === 'running';
+}
+
+async function loadAudioFile(key, path) {
+  if (!state.audioContext || state.audioBuffers[key]) return;
+
+  try {
+    const response = await fetch(path, { cache: 'force-cache' });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const arrayBuffer = await response.arrayBuffer();
+    state.audioBuffers[key] = await state.audioContext.decodeAudioData(arrayBuffer);
+  } catch (error) {
+    console.warn(`Não foi possível carregar ${path}`, error);
+  }
+}
+
+async function preloadAudio() {
+  await Promise.all([
+    loadAudioFile('handle', AUDIO_FILES.handle),
+    loadAudioFile('open', AUDIO_FILES.open),
+    loadAudioFile('close', AUDIO_FILES.close),
+    loadAudioFile('kitchen', AUDIO_FILES.kitchen)
+  ]);
+}
+
+function playBuffer(key, volume = 1, loop = false) {
+  const audioContext = state.audioContext;
+  const buffer = state.audioBuffers[key];
+  if (!audioContext || !buffer || audioContext.state !== 'running') return null;
+
+  const source = audioContext.createBufferSource();
+  const gain = audioContext.createGain();
+  source.buffer = buffer;
+  source.loop = loop;
+  gain.gain.value = volume;
+  source.connect(gain);
+  gain.connect(audioContext.destination);
+  source.start();
+  return { source, gain };
 }
 
 function typeKeySound() {
   const audioContext = state.audioContext;
-  if (!audioContext) return;
+  if (!audioContext || audioContext.state !== 'running') return;
 
   const now = audioContext.currentTime;
   const osc = audioContext.createOscillator();
@@ -66,76 +125,64 @@ function typeKeySound() {
   osc.stop(now + 0.04);
 }
 
-function playAudioFile(path, volume = 1) {
-  const audio = new Audio(path);
-  audio.volume = volume;
-  audio.play().catch(() => {});
-  return audio;
-}
-
-function stopAudio(audio) {
-  if (!audio) return;
-  try {
-    audio.pause();
-    audio.currentTime = 0;
-  } catch (_) {}
-}
-
 function makeNoiseBuffer() {
   const audioContext = state.audioContext;
   const sampleRate = audioContext.sampleRate;
-  const length = sampleRate * 2;
+  const length = Math.floor(sampleRate * 2);
   const buffer = audioContext.createBuffer(1, length, sampleRate);
   const data = buffer.getChannelData(0);
 
   for (let i = 0; i < length; i++) {
     data[i] = Math.random() * 2 - 1;
   }
-
   return buffer;
 }
 
-let nightNoiseSource = null;
-let nightNoiseGain = null;
-let nightNoiseFilter = null;
-let ambientTimers = [];
-
 function startNightAmbience() {
   const audioContext = state.audioContext;
-  if (!audioContext || nightNoiseSource) return;
+  if (!audioContext || state.nightNoiseSource || audioContext.state !== 'running') return;
 
-  nightNoiseFilter = audioContext.createBiquadFilter();
-  nightNoiseFilter.type = 'lowpass';
-  nightNoiseFilter.frequency.value = 1700;
+  state.nightNoiseFilter = audioContext.createBiquadFilter();
+  state.nightNoiseFilter.type = 'lowpass';
+  state.nightNoiseFilter.frequency.value = 1600;
 
-  nightNoiseGain = audioContext.createGain();
-  nightNoiseGain.gain.value = 0.014;
+  state.nightNoiseGain = audioContext.createGain();
+  state.nightNoiseGain.gain.value = 0.012;
 
-  nightNoiseSource = audioContext.createBufferSource();
-  nightNoiseSource.buffer = makeNoiseBuffer();
-  nightNoiseSource.loop = true;
-  nightNoiseSource.connect(nightNoiseFilter);
-  nightNoiseFilter.connect(nightNoiseGain);
-  nightNoiseGain.connect(audioContext.destination);
-  nightNoiseSource.start();
+  state.nightNoiseSource = audioContext.createBufferSource();
+  state.nightNoiseSource.buffer = makeNoiseBuffer();
+  state.nightNoiseSource.loop = true;
+  state.nightNoiseSource.connect(state.nightNoiseFilter);
+  state.nightNoiseFilter.connect(state.nightNoiseGain);
+  state.nightNoiseGain.connect(audioContext.destination);
+  state.nightNoiseSource.start();
 
   scheduleNightSounds();
 }
 
+function stopNightAmbience() {
+  if (state.nightNoiseSource) {
+    try { state.nightNoiseSource.stop(); } catch (_) {}
+    state.nightNoiseSource = null;
+  }
+  state.ambientTimers.forEach(timer => clearTimeout(timer));
+  state.ambientTimers = [];
+}
+
 function scheduleNightSounds() {
-  ambientTimers.push(setTimeout(() => {
+  state.ambientTimers.push(setTimeout(() => {
     playOwlCall();
     scheduleNightSounds();
   }, 12000 + Math.random() * 18000));
 
-  ambientTimers.push(setTimeout(() => {
+  state.ambientTimers.push(setTimeout(() => {
     playInsectChirp();
-  }, 2200 + Math.random() * 6500));
+  }, 2500 + Math.random() * 6500));
 }
 
 function playOwlCall() {
   const audioContext = state.audioContext;
-  if (!audioContext) return;
+  if (!audioContext || audioContext.state !== 'running') return;
 
   const now = audioContext.currentTime;
   const duration = 1.15;
@@ -151,6 +198,7 @@ function playOwlCall() {
   osc.frequency.setValueAtTime(base, now);
   osc.frequency.exponentialRampToValueAtTime(base * 0.68, now + 0.72);
   osc.frequency.exponentialRampToValueAtTime(base * 0.82, now + duration);
+
   osc2.frequency.setValueAtTime(base * 2.01, now);
   osc2.frequency.exponentialRampToValueAtTime(base * 1.35, now + 0.72);
   osc2.frequency.exponentialRampToValueAtTime(base * 1.62, now + duration);
@@ -160,7 +208,7 @@ function playOwlCall() {
   filter.Q.value = 1.5;
 
   gain.gain.setValueAtTime(0.0001, now);
-  gain.gain.exponentialRampToValueAtTime(0.03, now + 0.06);
+  gain.gain.exponentialRampToValueAtTime(0.028, now + 0.06);
   gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
 
   osc.connect(filter);
@@ -184,16 +232,17 @@ function playOwlCall() {
 
 function playInsectChirp() {
   const audioContext = state.audioContext;
-  if (!audioContext) return;
+  if (!audioContext || audioContext.state !== 'running') return;
 
   const now = audioContext.currentTime;
   const osc = audioContext.createOscillator();
   const gain = audioContext.createGain();
-
   osc.type = 'sine';
-  const f = 3200 + Math.random() * 1300;
-  osc.frequency.setValueAtTime(f, now);
-  osc.frequency.exponentialRampToValueAtTime(f * 1.08, now + 0.045);
+
+  const frequency = 3200 + Math.random() * 1300;
+  osc.frequency.setValueAtTime(frequency, now);
+  osc.frequency.exponentialRampToValueAtTime(frequency * 1.08, now + 0.045);
+
   gain.gain.setValueAtTime(0.0001, now);
   gain.gain.exponentialRampToValueAtTime(0.008, now + 0.006);
   gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.08);
@@ -219,77 +268,75 @@ async function typeText(text, speed = 42) {
   }
 }
 
-function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
 function showInteractionHint(show) {
   interactionHint.classList.toggle('hidden', !show);
+  interactionHint.classList.toggle('show', show);
 }
 
-function showSceneMessage(text, duration = 4200) {
+function showSceneMessage(text, duration = 4300) {
   sceneMessage.textContent = text;
   sceneMessage.classList.remove('hidden');
   requestAnimationFrame(() => sceneMessage.classList.add('visible'));
 
-  setTimeout(() => {
+  window.setTimeout(() => {
     sceneMessage.classList.remove('visible');
-    setTimeout(() => sceneMessage.classList.add('hidden'), 700);
+    window.setTimeout(() => sceneMessage.classList.add('hidden'), 700);
   }, duration);
+}
+
+function prepareSceneTwo() {
+  // Decodificar a imagem antes de precisar dela evita a travadinha no momento da troca.
+  const img = new Image();
+  img.src = 'assets/scenes/scene-02.png';
 }
 
 async function enterKitchen() {
   if (state.transitioning) return;
   state.transitioning = true;
+
+  // Remove imediatamente tudo que pertence à primeira cena.
   showInteractionHint(false);
+  doorHandle.disabled = true;
+  doorHandle.style.display = 'none';
 
-  // Primeiro: clique na maçaneta.
-  playAudioFile('assets/sounds/door-handle.wav', 0.72);
-  await sleep(450);
+  // O áudio já foi desbloqueado no clique. Agora os sons usam o Web Audio já liberado.
+  playBuffer('handle', 0.72);
+  await sleep(430);
 
-  // Depois: som e sensação de abertura antes do corte.
-  playAudioFile('assets/sounds/door-open.wav', 0.9);
-  sceneImage.classList.add('door-opening');
-  await sleep(350);
+  playBuffer('open', 0.88);
+  await sleep(180);
 
-  // Fade out com 2 segundos.
-  sceneOverlay.classList.add('fade-to-black');
+  // Tela preta em 2 segundos. A imagem fica totalmente parada durante a transição.
+  sceneOverlay.classList.add('fade-out');
   await sleep(2000);
 
-  state.currentScene = 2;
   stopNightAmbience();
   sceneImage.src = 'assets/scenes/scene-02.png';
-  sceneImage.classList.remove('door-opening');
+  sceneImage.alt = 'Uma cozinha escura';
 
-  // Som de porta fechando enquanto a nova sala aparece.
-  playAudioFile('assets/sounds/door-close.wav', 0.9);
+  // Porta fechando enquanto a segunda cena ainda está no escuro.
+  playBuffer('close', 0.88);
 
-  sceneOverlay.classList.remove('fade-to-black');
-  sceneOverlay.classList.add('fade-from-black');
-  await sleep(80);
-  sceneOverlay.classList.remove('fade-from-black');
-  await sleep(1920);
+  // Fade in em 2 segundos.
+  sceneOverlay.classList.remove('fade-out');
+  sceneOverlay.classList.add('fade-in');
+  await sleep(2000);
+  sceneOverlay.classList.remove('fade-in');
 
   startKitchenAmbience();
-  await sleep(450);
+  await sleep(350);
   showSceneMessage('Não sinto uma sensação boa.', 4300);
+
   state.transitioning = false;
 }
 
-function stopNightAmbience() {
-  if (nightNoiseSource) {
-    try { nightNoiseSource.stop(); } catch (_) {}
-    nightNoiseSource = null;
-  }
-  ambientTimers.forEach(t => clearTimeout(t));
-  ambientTimers = [];
-}
-
 function startKitchenAmbience() {
-  if (state.kitchenAmbientStarted) return;
-  state.kitchenAmbientStarted = true;
-  state.kitchenAmbient = playAudioFile('assets/sounds/kitchen-ambient.wav', 0.42);
-  state.kitchenAmbient.loop = true;
+  if (state.kitchenSource || !state.audioContext || state.audioContext.state !== 'running') return;
+
+  const result = playBuffer('kitchen', 0.42, true);
+  if (!result) return;
+  state.kitchenSource = result.source;
+  state.kitchenGain = result.gain;
 }
 
 async function playIntro() {
@@ -300,6 +347,10 @@ async function playIntro() {
 
   initAudio();
   await resumeAudio();
+
+  // Começamos o carregamento dos arquivos de som cedo, enquanto a introdução acontece.
+  preloadAudio();
+  prepareSceneTwo();
 
   for (let i = 0; i < story.length; i++) {
     await typeText(story[i].text);
@@ -319,16 +370,17 @@ async function playIntro() {
   intro.style.opacity = '0';
   await sleep(1600);
   intro.classList.add('hidden');
-  showInteractionHint(true);
 }
 
 startButton.addEventListener('click', playIntro);
 
-// Área interativa da maçaneta da primeira cena.
-const doorHandle = document.getElementById('door-handle');
 doorHandle.addEventListener('pointerenter', () => showInteractionHint(true));
 doorHandle.addEventListener('pointerleave', () => showInteractionHint(false));
+doorHandle.addEventListener('focus', () => showInteractionHint(true));
+doorHandle.addEventListener('blur', () => showInteractionHint(false));
 doorHandle.addEventListener('click', async () => {
+  // Importante: o contexto de áudio já foi criado durante o botão inicial.
+  // Reassumimos aqui também antes de iniciar a sequência.
   await resumeAudio();
   enterKitchen();
 });
