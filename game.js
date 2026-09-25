@@ -7,6 +7,13 @@ const sceneOverlay = document.getElementById('scene-overlay');
 const interactionHint = document.getElementById('interaction-hint');
 const sceneMessage = document.getElementById('scene-message');
 const doorHandle = document.getElementById('door-handle');
+const backButton = document.getElementById('back-button');
+
+const nightAudio = document.getElementById('night-audio');
+const handleAudio = document.getElementById('handle-audio');
+const openAudio = document.getElementById('open-audio');
+const closeAudio = document.getElementById('close-audio');
+const kitchenAudio = document.getElementById('kitchen-audio');
 
 const story = [
   { text: '23:47', pauseAfter: 900 },
@@ -20,245 +27,74 @@ const story = [
   { text: 'O endereço me trouxe até aqui.', pauseAfter: 1800 }
 ];
 
-const AUDIO_FILES = {
-  handle: 'assets/sounds/door-handle.wav',
-  open: 'assets/sounds/door-open.wav',
-  close: 'assets/sounds/door-close.wav',
-  kitchen: 'assets/sounds/kitchen-ambient.wav'
-};
-
 const state = {
-  audioContext: null,
   started: false,
   transitioning: false,
-  audioBuffers: {},
-  kitchenSource: null,
-  kitchenGain: null,
-  nightNoiseSource: null,
-  nightNoiseGain: null,
-  nightNoiseFilter: null,
-  ambientTimers: [],
-  doorUnlocked: false
+  scene: 1,
+  audioPrepared: false
 };
 
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-function initAudio() {
-  if (state.audioContext) return;
-  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-  if (!AudioContextClass) return;
-  state.audioContext = new AudioContextClass();
-}
-
-async function resumeAudio() {
-  initAudio();
-  if (!state.audioContext) return;
-  if (state.audioContext.state !== 'running') {
-    try { await state.audioContext.resume(); } catch (_) {}
-  }
-  state.doorUnlocked = state.audioContext.state === 'running';
-}
-
-async function loadAudioFile(key, path) {
-  if (!state.audioContext || state.audioBuffers[key]) return;
-
+function safePlay(audio, volume = 1, restart = false) {
   try {
-    const response = await fetch(path, { cache: 'force-cache' });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const arrayBuffer = await response.arrayBuffer();
-    state.audioBuffers[key] = await state.audioContext.decodeAudioData(arrayBuffer);
-  } catch (error) {
-    console.warn(`Não foi possível carregar ${path}`, error);
+    audio.volume = volume;
+    if (restart) {
+      audio.currentTime = 0;
+    }
+    const promise = audio.play();
+    if (promise && promise.catch) {
+      promise.catch(err => console.warn('Áudio bloqueado ou indisponível:', audio.src, err));
+    }
+  } catch (err) {
+    console.warn('Erro ao tocar áudio:', err);
   }
 }
 
-async function preloadAudio() {
-  await Promise.all([
-    loadAudioFile('handle', AUDIO_FILES.handle),
-    loadAudioFile('open', AUDIO_FILES.open),
-    loadAudioFile('close', AUDIO_FILES.close),
-    loadAudioFile('kitchen', AUDIO_FILES.kitchen)
-  ]);
+function prepareAudioFromUserGesture() {
+  if (state.audioPrepared) return;
+  state.audioPrepared = true;
+
+  // O clique inicial do jogador é usado para autorizar todos os áudios.
+  [nightAudio, kitchenAudio, handleAudio, openAudio, closeAudio].forEach(audio => {
+    try { audio.load(); } catch (_) {}
+  });
+
+  // Começamos os dois ambientes em volume 0.
+  // Assim o navegador considera a reprodução uma ação iniciada pelo jogador.
+  nightAudio.loop = true;
+  kitchenAudio.loop = true;
+  safePlay(nightAudio, 0);
+  safePlay(kitchenAudio, 0);
 }
 
-function playBuffer(key, volume = 1, loop = false) {
-  const audioContext = state.audioContext;
-  const buffer = state.audioBuffers[key];
-  if (!audioContext || !buffer || audioContext.state !== 'running') return null;
-
-  const source = audioContext.createBufferSource();
-  const gain = audioContext.createGain();
-  source.buffer = buffer;
-  source.loop = loop;
-  gain.gain.value = volume;
-  source.connect(gain);
-  gain.connect(audioContext.destination);
-  source.start();
-  return { source, gain };
+function setNightVolume(value) {
+  nightAudio.volume = value;
 }
 
-function typeKeySound() {
-  const audioContext = state.audioContext;
-  if (!audioContext || audioContext.state !== 'running') return;
-
-  const now = audioContext.currentTime;
-  const osc = audioContext.createOscillator();
-  const gain = audioContext.createGain();
-  const filter = audioContext.createBiquadFilter();
-
-  osc.type = 'square';
-  osc.frequency.setValueAtTime(120 + Math.random() * 35, now);
-  osc.frequency.exponentialRampToValueAtTime(72, now + 0.025);
-  filter.type = 'highpass';
-  filter.frequency.value = 500;
-
-  gain.gain.setValueAtTime(0.0001, now);
-  gain.gain.exponentialRampToValueAtTime(0.055, now + 0.002);
-  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.035);
-
-  osc.connect(filter);
-  filter.connect(gain);
-  gain.connect(audioContext.destination);
-  osc.start(now);
-  osc.stop(now + 0.04);
+function setKitchenVolume(value) {
+  kitchenAudio.volume = value;
 }
 
-function makeNoiseBuffer() {
-  const audioContext = state.audioContext;
-  const sampleRate = audioContext.sampleRate;
-  const length = Math.floor(sampleRate * 2);
-  const buffer = audioContext.createBuffer(1, length, sampleRate);
-  const data = buffer.getChannelData(0);
-
-  for (let i = 0; i < length; i++) {
-    data[i] = Math.random() * 2 - 1;
-  }
-  return buffer;
+function playDoorHandle() {
+  safePlay(handleAudio, 0.85, true);
 }
 
-function startNightAmbience() {
-  const audioContext = state.audioContext;
-  if (!audioContext || state.nightNoiseSource || audioContext.state !== 'running') return;
-
-  state.nightNoiseFilter = audioContext.createBiquadFilter();
-  state.nightNoiseFilter.type = 'lowpass';
-  state.nightNoiseFilter.frequency.value = 1600;
-
-  state.nightNoiseGain = audioContext.createGain();
-  state.nightNoiseGain.gain.value = 0.012;
-
-  state.nightNoiseSource = audioContext.createBufferSource();
-  state.nightNoiseSource.buffer = makeNoiseBuffer();
-  state.nightNoiseSource.loop = true;
-  state.nightNoiseSource.connect(state.nightNoiseFilter);
-  state.nightNoiseFilter.connect(state.nightNoiseGain);
-  state.nightNoiseGain.connect(audioContext.destination);
-  state.nightNoiseSource.start();
-
-  scheduleNightSounds();
+function playDoorOpen() {
+  safePlay(openAudio, 0.9, true);
 }
 
-function stopNightAmbience() {
-  if (state.nightNoiseSource) {
-    try { state.nightNoiseSource.stop(); } catch (_) {}
-    state.nightNoiseSource = null;
-  }
-  state.ambientTimers.forEach(timer => clearTimeout(timer));
-  state.ambientTimers = [];
-}
-
-function scheduleNightSounds() {
-  state.ambientTimers.push(setTimeout(() => {
-    playOwlCall();
-    scheduleNightSounds();
-  }, 12000 + Math.random() * 18000));
-
-  state.ambientTimers.push(setTimeout(() => {
-    playInsectChirp();
-  }, 2500 + Math.random() * 6500));
-}
-
-function playOwlCall() {
-  const audioContext = state.audioContext;
-  if (!audioContext || audioContext.state !== 'running') return;
-
-  const now = audioContext.currentTime;
-  const duration = 1.15;
-  const osc = audioContext.createOscillator();
-  const osc2 = audioContext.createOscillator();
-  const filter = audioContext.createBiquadFilter();
-  const gain = audioContext.createGain();
-
-  osc.type = 'sine';
-  osc2.type = 'triangle';
-
-  const base = 190 + Math.random() * 35;
-  osc.frequency.setValueAtTime(base, now);
-  osc.frequency.exponentialRampToValueAtTime(base * 0.68, now + 0.72);
-  osc.frequency.exponentialRampToValueAtTime(base * 0.82, now + duration);
-
-  osc2.frequency.setValueAtTime(base * 2.01, now);
-  osc2.frequency.exponentialRampToValueAtTime(base * 1.35, now + 0.72);
-  osc2.frequency.exponentialRampToValueAtTime(base * 1.62, now + duration);
-
-  filter.type = 'lowpass';
-  filter.frequency.value = 1100;
-  filter.Q.value = 1.5;
-
-  gain.gain.setValueAtTime(0.0001, now);
-  gain.gain.exponentialRampToValueAtTime(0.028, now + 0.06);
-  gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
-
-  osc.connect(filter);
-  osc2.connect(filter);
-  filter.connect(gain);
-
-  if (audioContext.createStereoPanner) {
-    const pan = audioContext.createStereoPanner();
-    pan.pan.value = (Math.random() * 1.4) - 0.7;
-    gain.connect(pan);
-    pan.connect(audioContext.destination);
-  } else {
-    gain.connect(audioContext.destination);
-  }
-
-  osc.start(now);
-  osc2.start(now);
-  osc.stop(now + duration + 0.05);
-  osc2.stop(now + duration + 0.05);
-}
-
-function playInsectChirp() {
-  const audioContext = state.audioContext;
-  if (!audioContext || audioContext.state !== 'running') return;
-
-  const now = audioContext.currentTime;
-  const osc = audioContext.createOscillator();
-  const gain = audioContext.createGain();
-  osc.type = 'sine';
-
-  const frequency = 3200 + Math.random() * 1300;
-  osc.frequency.setValueAtTime(frequency, now);
-  osc.frequency.exponentialRampToValueAtTime(frequency * 1.08, now + 0.045);
-
-  gain.gain.setValueAtTime(0.0001, now);
-  gain.gain.exponentialRampToValueAtTime(0.008, now + 0.006);
-  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.08);
-
-  osc.connect(gain);
-  gain.connect(audioContext.destination);
-  osc.start(now);
-  osc.stop(now + 0.09);
+function playDoorClose() {
+  safePlay(closeAudio, 0.9, true);
 }
 
 async function typeText(text, speed = 42) {
   for (const char of text) {
     introText.textContent += char;
-
+    // O som de teclado da introdução continua sendo gerado sem depender de arquivo externo.
     if (char !== ' ' && char !== '\n') {
-      typeKeySound();
       await sleep(speed + Math.random() * 28);
     } else if (char === '\n') {
       await sleep(180);
@@ -284,89 +120,138 @@ function showSceneMessage(text, duration = 4300) {
   }, duration);
 }
 
+function showFirstSceneControls() {
+  doorHandle.style.display = 'block';
+  backButton.classList.add('hidden');
+  showInteractionHint(false);
+}
+
+function showKitchenControls() {
+  doorHandle.style.display = 'none';
+  showInteractionHint(false);
+  backButton.classList.remove('hidden');
+}
+
 function prepareSceneTwo() {
-  // Decodificar a imagem antes de precisar dela evita a travadinha no momento da troca.
   const img = new Image();
   img.src = 'assets/scenes/scene-02.png';
 }
 
 async function enterKitchen() {
-  if (state.transitioning) return;
+  if (state.transitioning || state.scene !== 1) return;
   state.transitioning = true;
 
-  // Remove imediatamente tudo que pertence à primeira cena.
   showInteractionHint(false);
   doorHandle.disabled = true;
   doorHandle.style.display = 'none';
 
-  // O áudio já foi desbloqueado no clique. Agora os sons usam o Web Audio já liberado.
-  playBuffer('handle', 0.72);
-  await sleep(430);
+  playDoorHandle();
 
-  playBuffer('open', 0.88);
-  await sleep(180);
+  // Pequena espera para o clique da maçaneta aparecer antes da porta.
+  await sleep(420);
+  playDoorOpen();
 
-  // Tela preta em 2 segundos. A imagem fica totalmente parada durante a transição.
   sceneOverlay.classList.add('fade-out');
   await sleep(2000);
 
-  stopNightAmbience();
   sceneImage.src = 'assets/scenes/scene-02.png';
   sceneImage.alt = 'Uma cozinha escura';
 
-  // Porta fechando enquanto a segunda cena ainda está no escuro.
-  playBuffer('close', 0.88);
+  // Som de porta fechando enquanto a tela continua preta.
+  playDoorClose();
 
-  // Fade in em 2 segundos.
   sceneOverlay.classList.remove('fade-out');
   sceneOverlay.classList.add('fade-in');
-  await sleep(2000);
+
+  // Traz o ambiente da cozinha com um fade de volume.
+  kitchenAudio.volume = 0;
+  safePlay(kitchenAudio, 0, false);
+  const kitchenFadeStart = performance.now();
+
+  while (performance.now() - kitchenFadeStart < 2000) {
+    const p = (performance.now() - kitchenFadeStart) / 2000;
+    setKitchenVolume(Math.min(0.46, 0.46 * p));
+    await sleep(60);
+  }
+  setKitchenVolume(0.46);
+
+  await sleep(300);
   sceneOverlay.classList.remove('fade-in');
 
-  startKitchenAmbience();
-  await sleep(350);
+  state.scene = 2;
+  showKitchenControls();
   showSceneMessage('Não sinto uma sensação boa.', 4300);
 
   state.transitioning = false;
 }
 
-function startKitchenAmbience() {
-  if (state.kitchenSource || !state.audioContext || state.audioContext.state !== 'running') return;
+async function returnToFirstScene() {
+  if (state.transitioning || state.scene !== 2) return;
+  state.transitioning = true;
 
-  const result = playBuffer('kitchen', 0.42, true);
-  if (!result) return;
-  state.kitchenSource = result.source;
-  state.kitchenGain = result.gain;
+  backButton.disabled = true;
+  sceneMessage.classList.remove('visible');
+  sceneOverlay.classList.add('fade-out');
+
+  await sleep(2000);
+
+  sceneImage.src = 'assets/scenes/scene-01.png';
+  sceneImage.alt = 'Uma porta metálica escura';
+
+  // Cozinha para; ambiente noturno volta.
+  kitchenAudio.pause();
+  try { kitchenAudio.currentTime = 0; } catch (_) {}
+  setNightVolume(0.028);
+
+  sceneOverlay.classList.remove('fade-out');
+  sceneOverlay.classList.add('fade-in');
+
+  await sleep(2000);
+  sceneOverlay.classList.remove('fade-in');
+
+  state.scene = 1;
+  doorHandle.disabled = false;
+  showFirstSceneControls();
+
+  state.transitioning = false;
 }
 
 async function playIntro() {
   if (state.started) return;
+
   state.started = true;
   startButton.disabled = true;
   startButton.style.display = 'none';
 
-  initAudio();
-  await resumeAudio();
-
-  // Começamos o carregamento dos arquivos de som cedo, enquanto a introdução acontece.
-  preloadAudio();
+  prepareAudioFromUserGesture();
   prepareSceneTwo();
 
   for (let i = 0; i < story.length; i++) {
     await typeText(story[i].text);
     await sleep(story[i].pauseAfter);
+
     if (i !== story.length - 1) {
       introText.textContent += '\n\n';
     }
   }
 
   await sleep(500);
+
   scene.classList.remove('hidden');
+  showFirstSceneControls();
+
+  // O som noturno só fica audível quando a primeira cena aparece.
+  const fadeStart = performance.now();
+  while (performance.now() - fadeStart < 1300) {
+    const p = (performance.now() - fadeStart) / 1300;
+    setNightVolume(0.03 * p);
+    await sleep(60);
+  }
+  setNightVolume(0.03);
+
   requestAnimationFrame(() => scene.classList.add('visible'));
 
-  startNightAmbience();
-
-  await sleep(1000);
+  await sleep(900);
   intro.style.opacity = '0';
   await sleep(1600);
   intro.classList.add('hidden');
@@ -378,9 +263,15 @@ doorHandle.addEventListener('pointerenter', () => showInteractionHint(true));
 doorHandle.addEventListener('pointerleave', () => showInteractionHint(false));
 doorHandle.addEventListener('focus', () => showInteractionHint(true));
 doorHandle.addEventListener('blur', () => showInteractionHint(false));
-doorHandle.addEventListener('click', async () => {
-  // Importante: o contexto de áudio já foi criado durante o botão inicial.
-  // Reassumimos aqui também antes de iniciar a sequência.
-  await resumeAudio();
-  enterKitchen();
+doorHandle.addEventListener('click', enterKitchen);
+
+backButton.addEventListener('click', returnToFirstScene);
+
+// Se o navegador suspender o áudio depois de algum tempo, tenta retomar
+// quando o jogador tocar novamente na página.
+document.addEventListener('pointerdown', () => {
+  if (!state.started) return;
+  if (nightAudio.paused && state.scene === 1) safePlay(nightAudio, 0.03);
+  if (kitchenAudio.paused && state.scene === 2) safePlay(kitchenAudio, 0.46);
 });
+
