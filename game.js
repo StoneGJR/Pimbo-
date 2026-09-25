@@ -34,6 +34,51 @@ const state = {
   audioPrepared: false
 };
 
+
+// Som de máquina de escrever: gerado pelo navegador, sem arquivo externo.
+// O AudioContext é desbloqueado pelo clique em "CLIQUE PARA COMEÇAR".
+let typewriterContext = null;
+
+function initTypewriterAudio() {
+  if (typewriterContext) return;
+  const AudioCtx = window.AudioContext || window.webkitAudioContext;
+  if (!AudioCtx) return;
+  typewriterContext = new AudioCtx();
+  if (typewriterContext.state === 'suspended') {
+    typewriterContext.resume().catch(() => {});
+  }
+}
+
+function typeKeySound() {
+  if (!typewriterContext) return;
+  if (typewriterContext.state === 'suspended') {
+    typewriterContext.resume().catch(() => {});
+  }
+
+  const ctx = typewriterContext;
+  const now = ctx.currentTime;
+
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  const filter = ctx.createBiquadFilter();
+
+  osc.type = 'square';
+  osc.frequency.setValueAtTime(1250 + Math.random() * 320, now);
+  filter.type = 'highpass';
+  filter.frequency.setValueAtTime(550, now);
+
+  gain.gain.setValueAtTime(0.0001, now);
+  gain.gain.exponentialRampToValueAtTime(0.045, now + 0.003);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.035);
+
+  osc.connect(filter);
+  filter.connect(gain);
+  gain.connect(ctx.destination);
+
+  osc.start(now);
+  osc.stop(now + 0.04);
+}
+
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -93,8 +138,9 @@ function playDoorClose() {
 async function typeText(text, speed = 42) {
   for (const char of text) {
     introText.textContent += char;
-    // O som de teclado da introdução continua sendo gerado sem depender de arquivo externo.
+    // Cada caractere recebe um pequeno clique de máquina de escrever.
     if (char !== ' ' && char !== '\n') {
+      typeKeySound();
       await sleep(speed + Math.random() * 28);
     } else if (char === '\n') {
       await sleep(180);
@@ -224,6 +270,7 @@ async function playIntro() {
   startButton.style.display = 'none';
 
   prepareAudioFromUserGesture();
+  initTypewriterAudio();
   prepareSceneTwo();
 
   for (let i = 0; i < story.length; i++) {
