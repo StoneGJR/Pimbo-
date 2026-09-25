@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>AP202</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main id="game">
+    <section id="intro" class="screen">
+      <div id="intro-text" aria-live="polite"></div>
+      <button id="start-button" type="button">CLIQUE PARA COMEÇAR</button>
+    </section>
+
+    <section id="scene" class="screen hidden" aria-label="Cena atual">
+      <img id="scene-image" src="assets/scenes/scene-01.png" alt="Uma porta metálica escura" draggable="false">
+    </section>
+  </main>
+
+  <script src="game.js"></script>
+</body>
+</html>
