@@ -61,7 +61,6 @@ body {
   font-size: 12px;
   letter-spacing: 0.12em;
   cursor: pointer;
-  transition: background .2s, color .2s;
 }
 
 #start-button:hover {
@@ -84,6 +83,7 @@ body {
   object-fit: cover;
   user-select: none;
   -webkit-user-drag: none;
+  display: block;
 }
 
 .hotspot {
@@ -130,6 +130,37 @@ body {
   50% { opacity: 0.9; }
 }
 
+/* Seta mínima no meio da lateral direita, visível apenas na cozinha. */
+.nav-arrow {
+  position: absolute;
+  top: 50%;
+  right: 2.4%;
+  transform: translateY(-50%);
+  z-index: 25;
+  width: 24px;
+  height: 46px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: rgba(255,255,255,0.64);
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 34px;
+  font-weight: 300;
+  line-height: 46px;
+  text-align: center;
+  cursor: pointer;
+  text-shadow: 0 0 8px rgba(0,0,0,0.7);
+  opacity: 0.48;
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+
+.nav-arrow:hover,
+.nav-arrow:focus-visible {
+  opacity: 0.92;
+  transform: translateY(-50%) scale(1.05);
+  outline: none;
+}
+
 .scene-message {
   position: absolute;
   left: 12%;
@@ -171,4 +202,8 @@ body {
 #scene-overlay.fade-in {
   opacity: 0;
   transition: opacity 2s linear;
+}
+
+audio {
+  display: none;
 }
