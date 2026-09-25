@@ -73,6 +73,7 @@ body {
   opacity: 0;
   background: #000;
   transition: opacity 1.6s ease;
+  cursor: default;
 }
 
 #scene.visible { opacity: 1; }
@@ -83,4 +84,89 @@ body {
   object-fit: cover;
   user-select: none;
   -webkit-user-drag: none;
+  transition: transform 900ms ease, filter 900ms ease;
+}
+
+#scene-image.door-opening {
+  transform: scale(1.025) translateX(0.7%);
+  filter: brightness(0.72);
+}
+
+.hotspot {
+  position: absolute;
+  left: 6%;
+  top: 61%;
+  width: 23%;
+  height: 14%;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  border-radius: 10px;
+}
+
+.hotspot:hover,
+.hotspot:focus-visible {
+  outline: 1px solid rgba(255,255,255,0.16);
+  background: rgba(255,255,255,0.025);
+}
+
+.interaction-hint {
+  position: absolute;
+  left: 21%;
+  top: 66%;
+  padding: 6px 10px;
+  border: 1px solid rgba(255,255,255,0.22);
+  border-radius: 3px;
+  background: rgba(0,0,0,0.65);
+  color: rgba(255,255,255,0.88);
+  font-size: clamp(11px, 2.8vw, 16px);
+  letter-spacing: 0.05em;
+  pointer-events: none;
+  opacity: 0.85;
+  animation: hint-fade 1.8s ease-in-out infinite;
+}
+
+@keyframes hint-fade {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 0.95; }
+}
+
+.scene-message {
+  position: absolute;
+  left: 10%;
+  right: 10%;
+  bottom: 9%;
+  z-index: 20;
+  text-align: center;
+  font-size: clamp(18px, 4.5vw, 28px);
+  line-height: 1.4;
+  text-shadow: 0 2px 14px #000;
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 650ms ease, transform 650ms ease;
+  pointer-events: none;
+}
+
+.scene-message.visible {
+  opacity: 0.92;
+  transform: translateY(0);
+}
+
+#scene-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  pointer-events: none;
+  background: #000;
+  opacity: 0;
+}
+
+#scene-overlay.fade-to-black {
+  opacity: 1;
+  transition: opacity 2s linear;
+}
+
+#scene-overlay.fade-from-black {
+  opacity: 1;
+  transition: opacity 2s linear;
 }
