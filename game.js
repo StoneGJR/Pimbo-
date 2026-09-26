@@ -31,39 +31,47 @@ const state = {
   started: false,
   transitioning: false,
   scene: 1,
-  audioPrepared: false
+  audioUnlocked: false
 };
 
-
-// Som de máquina de escrever: gerado pelo navegador, sem arquivo externo.
-// O AudioContext é desbloqueado pelo clique em "CLIQUE PARA COMEÇAR".
+// -----------------------------------------------------------------------------
+// Máquina de escrever: som gerado pelo navegador, sem depender de arquivo.
+// -----------------------------------------------------------------------------
 let typewriterContext = null;
 
 function initTypewriterAudio() {
   if (typewriterContext) return;
+
   const AudioCtx = window.AudioContext || window.webkitAudioContext;
   if (!AudioCtx) return;
-  typewriterContext = new AudioCtx();
-  if (typewriterContext.state === 'suspended') {
-    typewriterContext.resume().catch(() => {});
+
+  try {
+    typewriterContext = new AudioCtx();
+    if (typewriterContext.state === 'suspended') {
+      typewriterContext.resume().catch(() => {});
+    }
+  } catch (err) {
+    console.warn('Não foi possível iniciar o som da máquina de escrever:', err);
+    typewriterContext = null;
   }
 }
 
 function typeKeySound() {
   if (!typewriterContext) return;
+
   if (typewriterContext.state === 'suspended') {
     typewriterContext.resume().catch(() => {});
   }
 
   const ctx = typewriterContext;
   const now = ctx.currentTime;
-
   const osc = ctx.createOscillator();
   const gain = ctx.createGain();
   const filter = ctx.createBiquadFilter();
 
   osc.type = 'square';
   osc.frequency.setValueAtTime(1250 + Math.random() * 320, now);
+
   filter.type = 'highpass';
   filter.frequency.setValueAtTime(550, now);
 
@@ -83,36 +91,51 @@ function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-function safePlay(audio, volume = 1, restart = false) {
+// -----------------------------------------------------------------------------
+// Áudio real.
+// Importante: não usamos audio.load() no clique inicial. Em alguns navegadores,
+// chamar load() e play() imediatamente pode interromper o play e fazer com que
+// todos os áudios fiquem pausados. Em vez disso, deixamos o navegador carregar
+// os elementos normalmente e apenas iniciamos os ambientes durante o gesto.
+// -----------------------------------------------------------------------------
+function playAudio(audio, volume = 1, restart = false) {
+  if (!audio) return Promise.reject(new Error('Elemento de áudio não encontrado.'));
+
   try {
     audio.volume = volume;
     if (restart) {
       audio.currentTime = 0;
     }
-    const promise = audio.play();
-    if (promise && promise.catch) {
-      promise.catch(err => console.warn('Áudio bloqueado ou indisponível:', audio.src, err));
-    }
+  } catch (_) {}
+
+  let result;
+  try {
+    result = audio.play();
   } catch (err) {
-    console.warn('Erro ao tocar áudio:', err);
+    console.warn('Erro ao tocar áudio:', audio.currentSrc || audio.src, err);
+    return Promise.reject(err);
   }
+
+  if (result && typeof result.catch === 'function') {
+    result.catch(err => {
+      console.warn('Áudio bloqueado ou indisponível:', audio.currentSrc || audio.src, err);
+    });
+  }
+
+  return result || Promise.resolve();
 }
 
 function prepareAudioFromUserGesture() {
-  if (state.audioPrepared) return;
-  state.audioPrepared = true;
+  if (state.audioUnlocked) return;
+  state.audioUnlocked = true;
 
-  // O clique inicial do jogador é usado para autorizar todos os áudios.
-  [nightAudio, kitchenAudio, handleAudio, openAudio, closeAudio].forEach(audio => {
-    try { audio.load(); } catch (_) {}
-  });
-
-  // Começamos os dois ambientes em volume 0.
-  // Assim o navegador considera a reprodução uma ação iniciada pelo jogador.
   nightAudio.loop = true;
   kitchenAudio.loop = true;
-  safePlay(nightAudio, 0);
-  safePlay(kitchenAudio, 0);
+
+  // Os dois ambientes começam silenciosos, mas já em reprodução.
+  // Isso acontece dentro do clique em "CLIQUE PARA COMEÇAR".
+  playAudio(nightAudio, 0);
+  playAudio(kitchenAudio, 0);
 }
 
 function setNightVolume(value) {
@@ -123,22 +146,28 @@ function setKitchenVolume(value) {
   kitchenAudio.volume = value;
 }
 
+function playDoorSound(audio, volume = 1) {
+  // O clique na maçaneta é outro gesto do jogador, então o próprio elemento
+  // pode tocar o efeito diretamente sem depender do autoplay.
+  playAudio(audio, volume, true);
+}
+
 function playDoorHandle() {
-  safePlay(handleAudio, 0.85, true);
+  playDoorSound(handleAudio, 0.85);
 }
 
 function playDoorOpen() {
-  safePlay(openAudio, 0.9, true);
+  playDoorSound(openAudio, 0.9);
 }
 
 function playDoorClose() {
-  safePlay(closeAudio, 0.9, true);
+  playDoorSound(closeAudio, 0.9);
 }
 
 async function typeText(text, speed = 42) {
   for (const char of text) {
     introText.textContent += char;
-    // Cada caractere recebe um pequeno clique de máquina de escrever.
+
     if (char !== ' ' && char !== '\n') {
       typeKeySound();
       await sleep(speed + Math.random() * 28);
@@ -192,8 +221,6 @@ async function enterKitchen() {
   doorHandle.style.display = 'none';
 
   playDoorHandle();
-
-  // Pequena espera para o clique da maçaneta aparecer antes da porta.
   await sleep(420);
   playDoorOpen();
 
@@ -203,23 +230,23 @@ async function enterKitchen() {
   sceneImage.src = 'assets/scenes/scene-02.png';
   sceneImage.alt = 'Uma cozinha escura';
 
-  // Som de porta fechando enquanto a tela continua preta.
   playDoorClose();
 
   sceneOverlay.classList.remove('fade-out');
   sceneOverlay.classList.add('fade-in');
 
-  // Traz o ambiente da cozinha com um fade de volume.
-  kitchenAudio.volume = 0;
-  safePlay(kitchenAudio, 0, false);
+  // O ambiente da cozinha já foi iniciado no clique inicial, então aqui basta
+  // aumentar o volume. Isso evita um novo problema de autoplay no meio da cena.
   const kitchenFadeStart = performance.now();
-
   while (performance.now() - kitchenFadeStart < 2000) {
     const p = (performance.now() - kitchenFadeStart) / 2000;
     setKitchenVolume(Math.min(0.46, 0.46 * p));
+    setNightVolume(Math.max(0, 0.03 * (1 - p)));
     await sleep(60);
   }
+
   setKitchenVolume(0.46);
+  setNightVolume(0);
 
   await sleep(300);
   sceneOverlay.classList.remove('fade-in');
@@ -244,10 +271,17 @@ async function returnToFirstScene() {
   sceneImage.src = 'assets/scenes/scene-01.png';
   sceneImage.alt = 'Uma porta metálica escura';
 
-  // Cozinha para; ambiente noturno volta.
-  kitchenAudio.pause();
-  try { kitchenAudio.currentTime = 0; } catch (_) {}
-  setNightVolume(0.028);
+  // Os ambientes continuam desbloqueados/reproduzindo. Só mudamos o volume.
+  const nightFadeStart = performance.now();
+  while (performance.now() - nightFadeStart < 2000) {
+    const p = (performance.now() - nightFadeStart) / 2000;
+    setKitchenVolume(Math.max(0, 0.46 * (1 - p)));
+    setNightVolume(Math.min(0.03, 0.03 * p));
+    await sleep(60);
+  }
+
+  setKitchenVolume(0);
+  setNightVolume(0.03);
 
   sceneOverlay.classList.remove('fade-out');
   sceneOverlay.classList.add('fade-in');
@@ -257,6 +291,7 @@ async function returnToFirstScene() {
 
   state.scene = 1;
   doorHandle.disabled = false;
+  backButton.disabled = false;
   showFirstSceneControls();
 
   state.transitioning = false;
@@ -269,6 +304,7 @@ async function playIntro() {
   startButton.disabled = true;
   startButton.style.display = 'none';
 
+  // Tudo que depende de autoplay começa aqui, dentro do clique do jogador.
   prepareAudioFromUserGesture();
   initTypewriterAudio();
   prepareSceneTwo();
@@ -287,7 +323,6 @@ async function playIntro() {
   scene.classList.remove('hidden');
   showFirstSceneControls();
 
-  // O som noturno só fica audível quando a primeira cena aparece.
   const fadeStart = performance.now();
   while (performance.now() - fadeStart < 1300) {
     const p = (performance.now() - fadeStart) / 1300;
@@ -295,6 +330,7 @@ async function playIntro() {
     await sleep(60);
   }
   setNightVolume(0.03);
+  setKitchenVolume(0);
 
   requestAnimationFrame(() => scene.classList.add('visible'));
 
@@ -314,11 +350,15 @@ doorHandle.addEventListener('click', enterKitchen);
 
 backButton.addEventListener('click', returnToFirstScene);
 
-// Se o navegador suspender o áudio depois de algum tempo, tenta retomar
-// quando o jogador tocar novamente na página.
+// Recupera o áudio caso o navegador suspenda a reprodução depois de algum tempo.
 document.addEventListener('pointerdown', () => {
-  if (!state.started) return;
-  if (nightAudio.paused && state.scene === 1) safePlay(nightAudio, 0.03);
-  if (kitchenAudio.paused && state.scene === 2) safePlay(kitchenAudio, 0.46);
-});
+  if (!state.started || !state.audioUnlocked || state.transitioning) return;
 
+  if (state.scene === 1 && nightAudio.paused) {
+    playAudio(nightAudio, 0.03);
+  }
+
+  if (state.scene === 2 && kitchenAudio.paused) {
+    playAudio(kitchenAudio, 0.46);
+  }
+});
