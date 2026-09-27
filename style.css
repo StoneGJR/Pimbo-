@@ -346,16 +346,10 @@ body {
   transition: opacity .85s linear;
 }
 
-#scene-overlay.jumpscare-flash {
-  opacity: .82;
-  background: #fff;
-  transition: opacity .045s linear;
-}
-
 #scene-overlay.locked-overlay {
-  opacity: .12;
+  opacity: .10;
   background: #000;
-  transition: opacity .12s linear;
+  transition: opacity .18s linear;
 }
 
 /* =========================================================
