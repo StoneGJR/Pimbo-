@@ -18,11 +18,13 @@
 
       <button id="door-handle" class="hotspot hotspot-entry hidden" type="button" aria-label="Abrir a porta de metal"></button>
 
+      <!-- O mesmo hotspot de geladeira é usado para aproximar e depois abrir. -->
       <button id="fridge-hotspot" class="hotspot hotspot-fridge hidden" type="button" aria-label="Abrir a geladeira"></button>
       <button id="bathroom-door-hotspot" class="hotspot hotspot-bathroom-door hidden" type="button" aria-label="Entrar no banheiro"></button>
       <button id="freezer-hotspot" class="hotspot hotspot-freezer hidden" type="button" aria-label="Abrir o freezer"></button>
       <button id="body-hotspot" class="hotspot hotspot-body hidden" type="button" aria-label="Examinar o corpo"></button>
 
+      <!-- Texto discreto que acompanha o ponteiro do mouse; não é mais um ícone fixo. -->
       <div id="interaction-hint" class="interaction-hint hidden">Abrir</div>
 
       <div id="action-bar" class="action-bar hidden">
@@ -37,13 +39,11 @@
     </section>
   </main>
 
-  <!-- Sons de ambiente: todos são loops. -->
   <audio id="night-audio" preload="auto" loop src="assets/sounds/nightambient.mp3"></audio>
   <audio id="kitchen-audio" preload="auto" loop src="assets/sounds/kitchenambient.mp3"></audio>
   <audio id="flies-audio" preload="auto" loop src="assets/sounds/flies.mp3"></audio>
   <audio id="fridge-hum-audio" preload="auto" loop src="assets/sounds/fridgehum.mp3"></audio>
 
-  <!-- Efeitos únicos: nunca fazem loop. -->
   <audio id="handle-audio" preload="auto" src="assets/sounds/doorhandle.mp3"></audio>
   <audio id="metal-open-audio" preload="auto" src="assets/sounds/metaldooropen.mp3"></audio>
   <audio id="wood-open-audio" preload="auto" src="assets/sounds/wooddooropen.mp3"></audio>
