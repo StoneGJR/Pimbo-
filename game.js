@@ -223,6 +223,41 @@ function setScene(src, alt) {
   sceneImage.alt = alt;
 }
 
+// Transição robusta: primeiro cobre COMPLETAMENTE a cena atual,
+// troca a imagem enquanto a tela está preta e só então revela a nova cena.
+// Isso evita o flash da imagem anterior entre dois estados.
+async function transitionScene(src, alt, fadeMs = 1050) {
+  if (!sceneOverlay) {
+    setScene(src, alt);
+    return;
+  }
+
+  sceneOverlay.classList.remove('fade-in', 'locked-overlay');
+  sceneOverlay.style.transition = 'none';
+  sceneOverlay.style.opacity = '1';
+
+  // Deixa o navegador pintar a camada preta antes de trocar a imagem.
+  await new Promise(requestAnimationFrame);
+  await new Promise(requestAnimationFrame);
+
+  setScene(src, alt);
+
+  // Garante que a imagem nova foi colocada antes de começar a revelação.
+  await new Promise(requestAnimationFrame);
+
+  sceneOverlay.classList.remove('fade-out');
+  sceneOverlay.style.transition = `opacity ${fadeMs}ms ease-in-out`;
+
+  await new Promise(resolve => {
+    requestAnimationFrame(() => {
+      sceneOverlay.style.opacity = '0';
+      setTimeout(resolve, fadeMs + 40);
+    });
+  });
+
+  sceneOverlay.style.transition = '';
+}
+
 function clearMessage() {
   if (messageTimer) clearTimeout(messageTimer);
   if (messageFadeTimer) clearTimeout(messageFadeTimer);
@@ -277,8 +312,10 @@ function applyBounds(hotspot, left, top, width, height) {
 
 function positionBackHotspot(context) {
   // Área grande e invisível; a ação só aparece no cursor.
+  // Na cozinha, o retorno fica no canto inferior esquerdo para não
+  // sobrepor a área da geladeira no lado direito.
   if (context === 'kitchen') {
-    applyBounds(backHotspot, '87%', '23%', '13%', '54%');
+    applyBounds(backHotspot, '2%', '80%', '18%', '18%');
   } else {
     applyBounds(backHotspot, '0%', '15%', '18%', '70%');
   }
@@ -404,24 +441,16 @@ async function enterKitchen() {
   hideAllHotspots();
   clearMessage();
 
-  // A maçaneta toca primeiro. A transição visual não espera o áudio inteiro.
   playOneShot(handleAudio, 0.86);
   await sleep(900);
   playOneShot(metalOpenAudio, 0.92);
 
-  // Corte/fade curto: o som da porta continua ao fundo sem prender a transição.
-  sceneOverlay.classList.add('fade-out');
-  await sleep(320);
-  setScene(images.kitchen, 'Uma cozinha escura');
-  sceneOverlay.classList.remove('fade-out');
-  sceneOverlay.classList.add('fade-in');
+  // A imagem só muda depois de a cena anterior estar totalmente preta.
+  await transitionScene(images.kitchen, 'Uma cozinha escura', 1050);
 
-  // Troca de ambiente em paralelo, sem esperar as faixas terminarem.
-  fadeAudio(nightAudio, 0, 650);
+  fadeAudio(nightAudio, 0, 800);
   startLoop(kitchenAudio, 0.42, false);
-  fadeAudio(kitchenAudio, 0.42, 650);
-  await sleep(280);
-  sceneOverlay.classList.remove('fade-in');
+  fadeAudio(kitchenAudio, 0.42, 800);
 
   state.scene = 'kitchen';
   showKitchenControls();
@@ -434,15 +463,11 @@ async function returnToEntry() {
   state.transitioning = true;
   hideAllHotspots();
   clearMessage();
-  sceneOverlay.classList.add('fade-out');
-  await sleep(900);
-  setScene(images.first, 'Uma porta metálica escura');
-  sceneOverlay.classList.remove('fade-out');
-  sceneOverlay.classList.add('fade-in');
-  await fadeAudio(kitchenAudio, 0, 800);
-  await fadeAudio(nightAudio, 0.03, 800);
-  await sleep(300);
-  sceneOverlay.classList.remove('fade-in');
+
+  await transitionScene(images.first, 'Uma porta metálica escura', 1050);
+  fadeAudio(kitchenAudio, 0, 850);
+  fadeAudio(nightAudio, 0.03, 850);
+
   state.scene = 'entry';
   showEntryControls();
   state.transitioning = false;
@@ -453,8 +478,8 @@ async function approachFridge() {
   state.transitioning = true;
   hideAllHotspots();
   clearMessage();
-  setScene(images.fridgeClosed, 'Geladeira fechada');
-  await sleep(180);
+  await transitionScene(images.fridgeClosed, 'Geladeira fechada', 900);
+  await sleep(120);
   state.scene = 'fridgeClosed';
   showFridgeClosedControls();
   state.transitioning = false;
@@ -464,10 +489,10 @@ async function openFridge() {
   if (state.transitioning || state.scene !== 'fridgeClosed' || state.gameLocked) return;
   state.transitioning = true;
   hideAllHotspots();
-  await playOneShot(fridgeOpenAudio, 0.9);
-  setScene(images.fridgeOpen, 'Geladeira aberta');
+  playOneShot(fridgeOpenAudio, 0.9);
+  await transitionScene(images.fridgeOpen, 'Geladeira aberta', 850);
   startLoop(fridgeHumAudio, 0.08, true);
-  await sleep(220);
+  await sleep(120);
   state.scene = 'fridge';
   showFridgeOpenControls();
   state.transitioning = false;
@@ -477,11 +502,11 @@ async function closeFridge() {
   if (state.transitioning || state.scene !== 'fridge' || state.gameLocked) return;
   state.transitioning = true;
   hideAllHotspots();
-  await playOneShot(fridgeCloseAudio, 0.92);
-  await fadeAudio(fridgeHumAudio, 0, 400);
+  playOneShot(fridgeCloseAudio, 0.92);
+  fadeAudio(fridgeHumAudio, 0, 400);
   stopAudio(fridgeHumAudio, true);
-  setScene(images.fridgeClosed, 'Geladeira fechada');
-  await sleep(220);
+  await transitionScene(images.fridgeClosed, 'Geladeira fechada', 850);
+  await sleep(120);
   state.scene = 'fridgeClosed';
   showFridgeClosedControls();
   state.transitioning = false;
@@ -491,9 +516,9 @@ async function openFreezer() {
   if (state.transitioning || state.scene !== 'fridgeClosed' || state.gameLocked) return;
   state.transitioning = true;
   hideAllHotspots();
-  await playOneShot(freezerOpenAudio, 0.9);
-  setScene(images.freezerOpen, 'Freezer aberto');
-  await sleep(220);
+  playOneShot(freezerOpenAudio, 0.9);
+  await transitionScene(images.freezerOpen, 'Freezer aberto', 850);
+  await sleep(120);
   state.scene = 'freezer';
   showFreezerControls();
   state.transitioning = false;
@@ -503,9 +528,9 @@ async function closeFreezer() {
   if (state.transitioning || state.scene !== 'freezer' || state.gameLocked) return;
   state.transitioning = true;
   hideAllHotspots();
-  await playOneShot(freezerCloseAudio, 0.92);
-  setScene(images.fridgeClosed, 'Geladeira fechada');
-  await sleep(220);
+  playOneShot(freezerCloseAudio, 0.92);
+  await transitionScene(images.fridgeClosed, 'Geladeira fechada', 850);
+  await sleep(120);
   state.scene = 'fridgeClosed';
   showFridgeClosedControls();
   state.transitioning = false;
@@ -522,8 +547,7 @@ async function kitchenFromFridge() {
     stopAudio(fridgeHumAudio, true);
   }
   if (state.scene === 'freezer') playOneShot(freezerCloseAudio, 0.86);
-  setScene(images.kitchen, 'Uma cozinha escura');
-  await sleep(350);
+  await transitionScene(images.kitchen, 'Uma cozinha escura', 950);
   state.scene = 'kitchen';
   showKitchenControls();
   state.transitioning = false;
@@ -535,23 +559,17 @@ async function enterBathroom() {
   hideAllHotspots();
   clearMessage();
 
-  // Maçaneta primeiro; depois a imagem de porta aberta entra junto do som da madeira.
   playOneShot(handleAudio, 0.82);
   await sleep(850);
   playOneShot(woodOpenAudio, 0.88);
-  setScene(images.bathroomOpen, 'Porta do banheiro aberta');
 
-  // Não espera 8 s de áudio: a porta é só uma etapa visual curta.
-  await sleep(1500);
-  sceneOverlay.classList.add('fade-out');
-  await sleep(280);
-  setScene(images.bathroom, 'Banheiro escuro');
-  sceneOverlay.classList.remove('fade-out');
-  sceneOverlay.classList.add('fade-in');
-  fadeAudio(kitchenAudio, 0, 600);
+  // Primeiro revela a porta aberta; só depois faz a entrada no banheiro.
+  await transitionScene(images.bathroomOpen, 'Porta do banheiro aberta', 1000);
+  await sleep(1400);
+  await transitionScene(images.bathroom, 'Banheiro escuro', 1050);
+
+  fadeAudio(kitchenAudio, 0, 750);
   startLoop(fliesAudio, 0.14, true);
-  await sleep(240);
-  sceneOverlay.classList.remove('fade-in');
 
   state.scene = 'bathroom';
   showBathroomControls();
@@ -564,14 +582,13 @@ async function leaveBathroom() {
   hideAllHotspots();
   clearMessage();
   playOneShot(woodCloseAudio, 0.88);
-  sceneOverlay.classList.add('fade-out');
-  await sleep(850);
-  setScene(images.kitchen, 'Uma cozinha escura');
-  await fadeAudio(fliesAudio, 0, 650);
+
+  await transitionScene(images.kitchen, 'Uma cozinha escura', 1050);
+  fadeAudio(fliesAudio, 0, 700);
   stopAudio(fliesAudio, true);
-  await fadeAudio(kitchenAudio, 0.42, 850);
-  sceneOverlay.classList.remove('fade-out');
-  await sleep(300);
+  startLoop(kitchenAudio, 0.42, false);
+  fadeAudio(kitchenAudio, 0.42, 850);
+
   state.scene = 'kitchen';
   showKitchenControls();
   state.transitioning = false;
@@ -586,14 +603,8 @@ async function enterBedroom() {
   playOneShot(handleAudio, 0.8);
   await sleep(850);
   playOneShot(woodOpenAudio, 0.84);
-  sceneOverlay.classList.add('fade-out');
-  await sleep(300);
-  setScene(images.bedroom, 'Um quarto escuro');
-  sceneOverlay.classList.remove('fade-out');
-  sceneOverlay.classList.add('fade-in');
-  fadeAudio(kitchenAudio, 0, 600);
-  await sleep(240);
-  sceneOverlay.classList.remove('fade-in');
+  await transitionScene(images.bedroom, 'Um quarto escuro', 1050);
+  fadeAudio(kitchenAudio, 0, 750);
 
   state.scene = 'bedroom';
   showBedroomControls();
@@ -606,14 +617,11 @@ async function leaveBedroom() {
   hideAllHotspots();
   clearMessage();
   playOneShot(woodCloseAudio, 0.76);
-  sceneOverlay.classList.add('fade-out');
-  await sleep(800);
-  setScene(images.kitchen, 'Uma cozinha escura');
-  sceneOverlay.classList.remove('fade-out');
-  sceneOverlay.classList.add('fade-in');
-  await fadeAudio(kitchenAudio, 0.42, 850);
-  await sleep(300);
-  sceneOverlay.classList.remove('fade-in');
+
+  await transitionScene(images.kitchen, 'Uma cozinha escura', 1050);
+  startLoop(kitchenAudio, 0.42, false);
+  fadeAudio(kitchenAudio, 0.42, 850);
+
   state.scene = 'kitchen';
   showKitchenControls();
   state.transitioning = false;
@@ -623,8 +631,7 @@ async function openDresser() {
   if (state.transitioning || state.scene !== 'bedroom' || state.gameLocked) return;
   state.transitioning = true;
   hideAllHotspots();
-  setScene(images.dresser, 'Uma cômoda com um celular');
-  await sleep(220);
+  await transitionScene(images.dresser, 'Uma cômoda com um celular', 800);
   state.scene = 'dresser';
   showDresserControls();
   state.transitioning = false;
@@ -634,8 +641,7 @@ async function closeDresser() {
   if (state.transitioning || !['dresser', 'drawerOpen', 'drawerNoKey'].includes(state.scene) || state.gameLocked) return;
   state.transitioning = true;
   hideAllHotspots();
-  setScene(images.bedroom, 'Um quarto escuro');
-  await sleep(220);
+  await transitionScene(images.bedroom, 'Um quarto escuro', 800);
   state.scene = 'bedroom';
   showBedroomControls();
   state.transitioning = false;
@@ -646,8 +652,7 @@ async function openDrawer() {
   state.transitioning = true;
   hideAllHotspots();
   playOneShot(drawerOpenAudio, 0.82);
-  setScene(images.drawerOpen, 'Cômoda com a gaveta aberta');
-  await sleep(220);
+  await transitionScene(images.drawerOpen, 'Cômoda com a gaveta aberta', 700);
   state.scene = 'drawerOpen';
   showDrawerControls();
   state.transitioning = false;
@@ -659,8 +664,7 @@ async function collectKey() {
   hideAllHotspots();
   state.hasKey = true;
   playOneShot(keyCollectedAudio, 0.88);
-  setScene(images.drawerNoKey, 'Cômoda sem a chave');
-  await sleep(300);
+  await transitionScene(images.drawerNoKey, 'Cômoda sem a chave', 700);
   state.scene = 'drawerNoKey';
   showDrawerNoKeyControls();
   state.transitioning = false;
@@ -684,7 +688,7 @@ async function collectPhone() {
 
   // O som do celular não bloqueia a troca da imagem.
   playOneShot(phoneCollectedAudio, 0.92);
-  setScene(images.dresserNoPhone, 'A cômoda sem o celular');
+  await transitionScene(images.dresserNoPhone, 'A cômoda sem o celular', 850);
   await sleep(900);
   await runFootstepSequence();
   await sleep(650);
@@ -818,12 +822,11 @@ function handleBack() {
   }
 }
 
-function closeDrawer() {
+async function closeDrawer() {
   if (state.transitioning || !['drawerOpen', 'drawerNoKey'].includes(state.scene) || state.gameLocked) return;
   state.transitioning = true;
   hideAllHotspots();
-  setScene(images.dresser, 'Uma cômoda com um celular');
-  setTimeout(() => {}, 0);
+  await transitionScene(images.dresser, 'Uma cômoda com um celular', 700);
   state.scene = 'dresser';
   showDresserControls();
   state.transitioning = false;
