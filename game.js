@@ -61,14 +61,13 @@ const state = {
   started: false,
   transitioning: false,
   scene: 'entry',
-  fridge: 'closed',
-  bathroomExamined: false,
   audioUnlocked: false
 };
 
 let typewriterContext = null;
 let messageTimer = null;
 let messageFadeTimer = null;
+let hintHotspot = null;
 
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -134,16 +133,16 @@ function setVolume(audio, value) {
 }
 
 function startLoop(audio, volume, restart = false) {
-  if (!audio) return;
+  if (!audio) return Promise.resolve();
   audio.loop = true;
   setVolume(audio, volume);
   if (restart) {
     try { audio.currentTime = 0; } catch (_) {}
   }
   const promise = audio.play();
-  if (promise && promise.catch) {
-    promise.catch(error => console.warn('Falha ao iniciar loop:', audio.src, error));
-  }
+  return promise && promise.catch ? promise.catch(error => {
+    console.warn('Falha ao iniciar loop:', audio.src, error);
+  }) : Promise.resolve();
 }
 
 function stopAudio(audio, reset = false) {
@@ -159,13 +158,46 @@ function playOneShot(audio, volume = 0.9) {
 
   try { audio.pause(); } catch (_) {}
   try { audio.currentTime = 0; } catch (_) {}
+  audio.loop = false;
   setVolume(audio, volume);
 
   const promise = audio.play();
-  if (promise && promise.catch) {
-    promise.catch(error => console.warn('Falha ao tocar efeito:', audio.src, error));
-  }
-  return promise || Promise.resolve();
+  return promise && promise.catch ? promise.catch(error => {
+    console.warn('Falha ao tocar efeito:', audio.src, error);
+  }) : Promise.resolve();
+}
+
+function playOneShotAndWait(audio, volume = 0.9, maxWaitMs = 5000) {
+  if (!audio) return Promise.resolve();
+
+  try { audio.pause(); } catch (_) {}
+  try { audio.currentTime = 0; } catch (_) {}
+  audio.loop = false;
+  setVolume(audio, volume);
+
+  return new Promise(resolve => {
+    let finished = false;
+    let timer = null;
+
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      if (timer) clearTimeout(timer);
+      audio.removeEventListener('ended', finish);
+      resolve();
+    };
+
+    audio.addEventListener('ended', finish, { once: true });
+    timer = setTimeout(finish, maxWaitMs);
+
+    const promise = audio.play();
+    if (promise && promise.catch) {
+      promise.catch(error => {
+        console.warn('Falha ao tocar efeito:', audio.src, error);
+        finish();
+      });
+    }
+  });
 }
 
 function fadeAudio(audio, target, duration = 900) {
@@ -188,8 +220,6 @@ function unlockLoopAudios() {
   if (state.audioUnlocked) return;
   state.audioUnlocked = true;
 
-  // Todos os loops são iniciados dentro do clique inicial para evitar bloqueios
-  // de autoplay mais tarde. Os que ainda não são usados ficam inaudíveis.
   startLoop(nightAudio, 0, true);
   startLoop(kitchenAudio, 0, true);
   startLoop(fliesAudio, 0, true);
@@ -220,20 +250,28 @@ function showSceneMessage(text, duration = 4200) {
   }, duration);
 }
 
-function setHint(show, text = 'Abrir', hotspot = null) {
+function moveHintToPointer(event) {
+  const game = document.getElementById('game');
+  if (!game || !interactionHint || !hintHotspot) return;
+
+  const rect = game.getBoundingClientRect();
+  const offsetX = 12;
+  const offsetY = 16;
+  const x = Math.min(rect.width - 8, Math.max(8, event.clientX - rect.left + offsetX));
+  const y = Math.min(rect.height - 8, Math.max(8, event.clientY - rect.top - offsetY));
+
+  interactionHint.style.left = `${x}px`;
+  interactionHint.style.top = `${y}px`;
+  interactionHint.style.transform = 'translate(0, -100%)';
+}
+
+function setHint(show, text = 'Abrir', hotspot = null, event = null) {
+  hintHotspot = show ? hotspot : null;
   interactionHint.textContent = text;
   interactionHint.classList.toggle('hidden', !show);
   interactionHint.classList.toggle('show', show);
 
-  if (show && hotspot) {
-    const rect = hotspot.getBoundingClientRect();
-    const gameRect = document.getElementById('game').getBoundingClientRect();
-    const x = ((rect.left + rect.width * 0.5 - gameRect.left) / gameRect.width) * 100;
-    const y = ((rect.top + rect.height * 0.5 - gameRect.top) / gameRect.height) * 100;
-    interactionHint.style.left = `${x}%`;
-    interactionHint.style.top = `${Math.max(4, y - 4)}%`;
-    interactionHint.style.transform = 'translate(-50%, -50%)';
-  }
+  if (show && event) moveHintToPointer(event);
 }
 
 function hideAllHotspots() {
@@ -256,7 +294,15 @@ function showKitchenControls() {
   backButton.classList.remove('hidden');
 }
 
-function showFridgeControls() {
+function showFridgeClosedControls() {
+  hideAllHotspots();
+  fridgeHotspot.classList.remove('hidden');
+  actionBar.classList.remove('hidden');
+  actionClose.textContent = 'ABRIR GELADEIRA';
+  actionKitchen.textContent = '← COZINHA';
+}
+
+function showFridgeOpenControls() {
   hideAllHotspots();
   freezerHotspot.classList.remove('hidden');
   actionBar.classList.remove('hidden');
@@ -315,15 +361,14 @@ async function enterKitchen() {
   if (state.transitioning || state.scene !== 'entry') return;
   state.transitioning = true;
   hideAllHotspots();
+  clearMessage();
 
-  await playOneShot(handleAudio, 0.86);
-  await sleep(280);
+  // Maçaneta termina antes da porta metálica começar: sem sobreposição indesejada.
+  await playOneShotAndWait(handleAudio, 0.86, 2200);
   playOneShot(metalOpenAudio, 0.92);
 
-  // A troca começa antes do fim do efeito de 4 s, deixando o som atravessar
-  // a transição em vez de fazer o jogador esperar todo o áudio.
   sceneOverlay.classList.add('fade-out');
-  await sleep(1650);
+  await sleep(1550);
 
   setScene(images.kitchen, 'Uma cozinha escura');
   sceneOverlay.classList.remove('fade-out');
@@ -362,17 +407,32 @@ async function returnToEntry() {
   state.transitioning = false;
 }
 
-async function openFridge() {
+async function approachFridge() {
   if (state.transitioning || state.scene !== 'kitchen') return;
+  state.transitioning = true;
+  hideAllHotspots();
+  clearMessage();
+
+  setScene(images.fridgeClosed, 'Geladeira fechada');
+  await sleep(180);
+
+  state.scene = 'fridgeClosed';
+  showFridgeClosedControls();
+  state.transitioning = false;
+}
+
+async function openFridge() {
+  if (state.transitioning || state.scene !== 'fridgeClosed') return;
   state.transitioning = true;
   hideAllHotspots();
 
   playOneShot(fridgeOpenAudio, 0.9);
   setScene(images.fridgeOpen, 'Geladeira aberta');
-  state.fridge = 'open';
-  startLoop(fridgeHumAudio, 0.08, true);
+  await startLoop(fridgeHumAudio, 0.08, true);
   await sleep(180);
-  showFridgeControls();
+
+  state.scene = 'fridge';
+  showFridgeOpenControls();
   state.transitioning = false;
 }
 
@@ -382,15 +442,13 @@ async function closeFridge() {
   hideAllHotspots();
 
   playOneShot(fridgeCloseAudio, 0.92);
-  await sleep(100);
   await fadeAudio(fridgeHumAudio, 0, 420);
   stopAudio(fridgeHumAudio, true);
   setScene(images.fridgeClosed, 'Geladeira fechada');
   await sleep(220);
 
-  state.fridge = 'closed';
-  state.scene = 'kitchen';
-  showKitchenControls();
+  state.scene = 'fridgeClosed';
+  showFridgeClosedControls();
   state.transitioning = false;
 }
 
@@ -401,8 +459,9 @@ async function openFreezer() {
 
   playOneShot(freezerOpenAudio, 0.9);
   setScene(images.freezerOpen, 'Freezer aberto');
-  state.fridge = 'freezer';
   await sleep(180);
+
+  state.scene = 'freezer';
   showFreezerControls();
   state.transitioning = false;
 }
@@ -414,26 +473,52 @@ async function closeFreezer() {
 
   playOneShot(freezerCloseAudio, 0.92);
   setScene(images.fridgeOpen, 'Geladeira aberta');
-  state.fridge = 'open';
   await sleep(180);
-  showFridgeControls();
+
+  state.scene = 'fridge';
+  showFridgeOpenControls();
   state.transitioning = false;
 }
 
 async function kitchenFromFridge() {
   if (state.transitioning) return;
-  if (state.scene === 'fridge') return closeFridge();
+
+  if (state.scene === 'fridgeClosed') {
+    state.transitioning = true;
+    hideAllHotspots();
+    setScene(images.kitchen, 'Uma cozinha escura');
+    await sleep(250);
+    state.scene = 'kitchen';
+    showKitchenControls();
+    state.transitioning = false;
+    return;
+  }
+
+  if (state.scene === 'fridge') {
+    state.transitioning = true;
+    hideAllHotspots();
+    playOneShot(fridgeCloseAudio, 0.9);
+    await fadeAudio(fridgeHumAudio, 0, 400);
+    stopAudio(fridgeHumAudio, true);
+    setScene(images.kitchen, 'Uma cozinha escura');
+    state.scene = 'kitchen';
+    await sleep(500);
+    showKitchenControls();
+    state.transitioning = false;
+    return;
+  }
+
   if (state.scene === 'freezer') {
     state.transitioning = true;
     hideAllHotspots();
     playOneShot(freezerCloseAudio, 0.9);
+    await sleep(140);
+    playOneShot(fridgeCloseAudio, 0.9);
     await fadeAudio(fridgeHumAudio, 0, 400);
     stopAudio(fridgeHumAudio, true);
-    playOneShot(fridgeCloseAudio, 0.9);
     setScene(images.kitchen, 'Uma cozinha escura');
-    state.fridge = 'closed';
     state.scene = 'kitchen';
-    await sleep(550);
+    await sleep(500);
     showKitchenControls();
     state.transitioning = false;
   }
@@ -445,19 +530,17 @@ async function enterBathroom() {
   hideAllHotspots();
   clearMessage();
 
-  await playOneShot(handleAudio, 0.82);
-  await sleep(250);
-
-  // A foto da cozinha com a porta aberta aparece junto do som da porta.
+  // Também aqui a maçaneta acontece primeiro, depois a madeira.
+  await playOneShotAndWait(handleAudio, 0.82, 2200);
   playOneShot(woodOpenAudio, 0.88);
+
   setScene(images.bathroomOpen, 'Porta do banheiro aberta');
   sceneOverlay.classList.add('fade-in');
   await sleep(250);
   sceneOverlay.classList.remove('fade-in');
 
-  // Não obriga o jogador a ouvir um efeito muito comprido. A porta de madeira
-  // tem no máximo ~3,6 s de janela audível nesta sequência.
-  await sleep(3200);
+  // A cena intermediária fica visível por alguns segundos sem prender o jogo.
+  await sleep(3000);
   stopAudio(woodOpenAudio, false);
 
   sceneOverlay.classList.add('fade-out');
@@ -467,7 +550,7 @@ async function enterBathroom() {
   sceneOverlay.classList.add('fade-in');
 
   await fadeAudio(kitchenAudio, 0, 850);
-  startLoop(fliesAudio, 0.14, true);
+  await startLoop(fliesAudio, 0.14, true);
   await sleep(350);
   sceneOverlay.classList.remove('fade-in');
 
@@ -504,8 +587,7 @@ async function leaveBathroom() {
 
 function examineBody() {
   if (state.transitioning || state.scene !== 'bathroom') return;
-  if (state.bathroomExamined) return;
-  state.bathroomExamined = true;
+  // O jogador pode examinar novamente sempre que clicar.
   showSceneMessage('O cheiro tá horrível.', 4500);
 }
 
@@ -540,29 +622,38 @@ async function playIntro() {
   intro.classList.add('hidden');
 }
 
-// --------------------------- Eventos ---------------------------------------
+function bindHoverHint(hotspot, text) {
+  hotspot.addEventListener('pointerenter', event => setHint(true, text, hotspot, event));
+  hotspot.addEventListener('pointermove', event => {
+    if (hintHotspot === hotspot) moveHintToPointer(event);
+  });
+  hotspot.addEventListener('pointerleave', () => {
+    if (hintHotspot === hotspot) setHint(false);
+  });
+  hotspot.addEventListener('focus', () => setHint(true, text, hotspot));
+  hotspot.addEventListener('blur', () => {
+    if (hintHotspot === hotspot) setHint(false);
+  });
+}
+
 startButton.addEventListener('click', playIntro);
 
-doorHandle.addEventListener('pointerenter', () => setHint(true, 'Abrir', doorHandle));
-doorHandle.addEventListener('pointerleave', () => setHint(false));
-doorHandle.addEventListener('focus', () => setHint(true, 'Abrir', doorHandle));
-doorHandle.addEventListener('blur', () => setHint(false));
+bindHoverHint(doorHandle, 'Abrir');
 doorHandle.addEventListener('click', enterKitchen);
 
-fridgeHotspot.addEventListener('pointerenter', () => setHint(true, 'Abrir', fridgeHotspot));
-fridgeHotspot.addEventListener('pointerleave', () => setHint(false));
-fridgeHotspot.addEventListener('click', openFridge);
+bindHoverHint(fridgeHotspot, 'Abrir');
+fridgeHotspot.addEventListener('click', () => {
+  if (state.scene === 'kitchen') approachFridge();
+  else if (state.scene === 'fridgeClosed') openFridge();
+});
 
-freezerHotspot.addEventListener('pointerenter', () => setHint(true, 'Abrir', freezerHotspot));
-freezerHotspot.addEventListener('pointerleave', () => setHint(false));
+bindHoverHint(freezerHotspot, 'Abrir freezer');
 freezerHotspot.addEventListener('click', openFreezer);
 
-bathroomDoorHotspot.addEventListener('pointerenter', () => setHint(true, 'Entrar', bathroomDoorHotspot));
-bathroomDoorHotspot.addEventListener('pointerleave', () => setHint(false));
+bindHoverHint(bathroomDoorHotspot, 'Entrar');
 bathroomDoorHotspot.addEventListener('click', enterBathroom);
 
-bodyHotspot.addEventListener('pointerenter', () => setHint(true, 'Examinar', bodyHotspot));
-bodyHotspot.addEventListener('pointerleave', () => setHint(false));
+bindHoverHint(bodyHotspot, 'Examinar');
 bodyHotspot.addEventListener('click', examineBody);
 
 backButton.addEventListener('click', () => {
@@ -570,23 +661,27 @@ backButton.addEventListener('click', () => {
 });
 
 actionClose.addEventListener('click', () => {
-  if (state.scene === 'fridge') closeFridge();
+  if (state.scene === 'fridgeClosed') openFridge();
+  else if (state.scene === 'fridge') closeFridge();
   else if (state.scene === 'freezer') closeFreezer();
   else if (state.scene === 'bathroom') leaveBathroom();
 });
 
 actionKitchen.addEventListener('click', () => {
-  if (state.scene === 'fridge' || state.scene === 'freezer') kitchenFromFridge();
-  else if (state.scene === 'bathroom') leaveBathroom();
+  if (state.scene === 'fridgeClosed' || state.scene === 'fridge' || state.scene === 'freezer') {
+    kitchenFromFridge();
+  } else if (state.scene === 'bathroom') {
+    leaveBathroom();
+  }
 });
 
-// Se o navegador suspender o áudio, qualquer interação do jogador pode
-// recuperá-lo sem alterar a cena atual.
 document.addEventListener('pointerdown', () => {
   if (!state.started || !state.audioUnlocked) return;
 
   if (state.scene === 'entry' && nightAudio.paused) startLoop(nightAudio, 0.03);
-  if (state.scene === 'kitchen' && kitchenAudio.paused) startLoop(kitchenAudio, 0.42);
+  if ((state.scene === 'kitchen' || state.scene === 'fridgeClosed') && kitchenAudio.paused) {
+    startLoop(kitchenAudio, 0.42);
+  }
   if (state.scene === 'bathroom' && fliesAudio.paused) startLoop(fliesAudio, 0.14);
   if ((state.scene === 'fridge' || state.scene === 'freezer') && fridgeHumAudio.paused) {
     startLoop(fridgeHumAudio, 0.08);
