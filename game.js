@@ -403,17 +403,24 @@ async function enterKitchen() {
   state.transitioning = true;
   hideAllHotspots();
   clearMessage();
-  await playOneShotAndWait(handleAudio, 0.86, 2200);
-  await playOneShotAndWait(metalOpenAudio, 0.92, 5000);
 
+  // A maçaneta toca primeiro. A transição visual não espera o áudio inteiro.
+  playOneShot(handleAudio, 0.86);
+  await sleep(900);
+  playOneShot(metalOpenAudio, 0.92);
+
+  // Corte/fade curto: o som da porta continua ao fundo sem prender a transição.
   sceneOverlay.classList.add('fade-out');
-  await sleep(500);
+  await sleep(320);
   setScene(images.kitchen, 'Uma cozinha escura');
   sceneOverlay.classList.remove('fade-out');
   sceneOverlay.classList.add('fade-in');
-  await fadeAudio(nightAudio, 0, 900);
-  await fadeAudio(kitchenAudio, 0.42, 900);
-  await sleep(350);
+
+  // Troca de ambiente em paralelo, sem esperar as faixas terminarem.
+  fadeAudio(nightAudio, 0, 650);
+  startLoop(kitchenAudio, 0.42, false);
+  fadeAudio(kitchenAudio, 0.42, 650);
+  await sleep(280);
   sceneOverlay.classList.remove('fade-in');
 
   state.scene = 'kitchen';
@@ -527,19 +534,25 @@ async function enterBathroom() {
   state.transitioning = true;
   hideAllHotspots();
   clearMessage();
-  await playOneShotAndWait(handleAudio, 0.82, 2200);
+
+  // Maçaneta primeiro; depois a imagem de porta aberta entra junto do som da madeira.
+  playOneShot(handleAudio, 0.82);
+  await sleep(850);
   playOneShot(woodOpenAudio, 0.88);
   setScene(images.bathroomOpen, 'Porta do banheiro aberta');
-  await sleep(2700);
+
+  // Não espera 8 s de áudio: a porta é só uma etapa visual curta.
+  await sleep(1500);
   sceneOverlay.classList.add('fade-out');
-  await sleep(800);
+  await sleep(280);
   setScene(images.bathroom, 'Banheiro escuro');
   sceneOverlay.classList.remove('fade-out');
   sceneOverlay.classList.add('fade-in');
-  await fadeAudio(kitchenAudio, 0, 800);
+  fadeAudio(kitchenAudio, 0, 600);
   startLoop(fliesAudio, 0.14, true);
-  await sleep(350);
+  await sleep(240);
   sceneOverlay.classList.remove('fade-in');
+
   state.scene = 'bathroom';
   showBathroomControls();
   state.transitioning = false;
@@ -569,16 +582,19 @@ async function enterBedroom() {
   state.transitioning = true;
   hideAllHotspots();
   clearMessage();
-  await playOneShotAndWait(handleAudio, 0.8, 2200);
+
+  playOneShot(handleAudio, 0.8);
+  await sleep(850);
   playOneShot(woodOpenAudio, 0.84);
   sceneOverlay.classList.add('fade-out');
-  await sleep(650);
+  await sleep(300);
   setScene(images.bedroom, 'Um quarto escuro');
   sceneOverlay.classList.remove('fade-out');
   sceneOverlay.classList.add('fade-in');
-  await fadeAudio(kitchenAudio, 0, 800);
-  await sleep(350);
+  fadeAudio(kitchenAudio, 0, 600);
+  await sleep(240);
   sceneOverlay.classList.remove('fade-in');
+
   state.scene = 'bedroom';
   showBedroomControls();
   state.transitioning = false;
@@ -665,12 +681,14 @@ async function collectPhone() {
   state.transitioning = true;
   hideAllHotspots();
   state.phoneTaken = true;
-  await playOneShotAndWait(phoneCollectedAudio, 0.92, 2200);
+
+  // O som do celular não bloqueia a troca da imagem.
+  playOneShot(phoneCollectedAudio, 0.92);
   setScene(images.dresserNoPhone, 'A cômoda sem o celular');
   await sleep(900);
   await runFootstepSequence();
   await sleep(650);
-  triggerJumpscareLock();
+  await triggerJumpscareLock();
 }
 
 async function runFootstepSequence() {
@@ -705,78 +723,88 @@ function playProceduralJumpscareAndStuck() {
   if (ctx.state === 'suspended') ctx.resume().catch(() => {});
   const now = ctx.currentTime;
 
-  // Ataque curto e seco para o impacto da imagem.
-  const impactOsc = ctx.createOscillator();
-  const impactGain = ctx.createGain();
-  const impactFilter = ctx.createBiquadFilter();
-  impactOsc.type = 'sawtooth';
-  impactOsc.frequency.setValueAtTime(170, now);
-  impactOsc.frequency.exponentialRampToValueAtTime(62, now + 0.14);
-  impactFilter.type = 'lowpass';
-  impactFilter.frequency.setValueAtTime(1800, now);
-  impactGain.gain.setValueAtTime(0.0001, now);
-  impactGain.gain.exponentialRampToValueAtTime(0.34, now + 0.006);
-  impactGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.18);
-  impactOsc.connect(impactFilter);
-  impactFilter.connect(impactGain);
-  impactGain.connect(ctx.destination);
-  impactOsc.start(now);
-  impactOsc.stop(now + 0.2);
-
-  // Pequeno trecho "travado": um buffer curtíssimo em loop.
-  const bufferSeconds = 0.075;
+  // Som de travamento simples e contínuo, sem ataque extra/"glitch".
+  const bufferSeconds = 0.085;
   const buffer = ctx.createBuffer(1, Math.floor(ctx.sampleRate * bufferSeconds), ctx.sampleRate);
   const data = buffer.getChannelData(0);
   for (let i = 0; i < data.length; i++) {
     const t = i / ctx.sampleRate;
-    const buzz = Math.sin(2 * Math.PI * 115 * t) * 0.35;
-    const harmonic = Math.sin(2 * Math.PI * 230 * t) * 0.12;
-    const noise = (Math.random() * 2 - 1) * 0.05;
-    data[i] = buzz + harmonic + noise;
+    const fundamental = Math.sin(2 * Math.PI * 102 * t) * 0.36;
+    const harmonic = Math.sin(2 * Math.PI * 204 * t) * 0.13;
+    const rough = (Math.random() * 2 - 1) * 0.035;
+    data[i] = fundamental + harmonic + rough;
   }
+
   const source = ctx.createBufferSource();
   const gain = ctx.createGain();
   const filter = ctx.createBiquadFilter();
   source.buffer = buffer;
   source.loop = true;
   filter.type = 'lowpass';
-  filter.frequency.value = 1300;
-  gain.gain.setValueAtTime(0.0001, now + 0.16);
-  gain.gain.exponentialRampToValueAtTime(0.16, now + 0.19);
-  gain.gain.setValueAtTime(0.16, now + 1.18);
-  gain.gain.exponentialRampToValueAtTime(0.0001, now + 1.55);
+  filter.frequency.value = 1250;
+  gain.gain.setValueAtTime(0.0001, now);
+  gain.gain.exponentialRampToValueAtTime(0.14, now + 0.035);
+  gain.gain.setValueAtTime(0.14, now + 4.6);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + 5.0);
   source.connect(filter);
   filter.connect(gain);
   gain.connect(ctx.destination);
-  source.start(now + 0.16);
-  source.stop(now + 1.6);
+  source.start(now);
+  source.stop(now + 5.05);
+}
+
+function playJumpscareAudioAndWait(audio, volume = 1.0, maxWaitMs = 6000) {
+  if (!audio) return Promise.resolve();
+  try { audio.pause(); } catch (_) {}
+  try { audio.currentTime = 0; } catch (_) {}
+  audio.loop = false;
+  setVolume(audio, volume);
+
+  return new Promise(resolve => {
+    let finished = false;
+    let timer = null;
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      if (timer) clearTimeout(timer);
+      audio.removeEventListener('ended', finish);
+      resolve();
+    };
+
+    audio.addEventListener('ended', finish, { once: true });
+    timer = setTimeout(finish, maxWaitMs);
+    const promise = audio.play();
+    if (promise && promise.catch) promise.catch(error => {
+      console.warn('Não foi possível reproduzir o jumpscare:', error);
+      finish();
+    });
+  });
 }
 
 async function triggerJumpscareLock() {
   if (state.gameLocked) return;
+
+  // Primeiro corta tudo o que estava tocando, mas NÃO bloqueia o áudio do jumpscare.
   state.gameLocked = true;
   state.transitioning = false;
   hideAllHotspots();
   clearMessage();
   stopAllGameAudio();
 
-  // A imagem entra junto com o impacto visual.
-  setScene(images.jumpscare, '');
+  // JUMPSCARE: corte totalmente seco. Sem fade, sem flash, sem som de transição.
   scene.classList.add('game-locked');
-  sceneOverlay.classList.remove('fade-in', 'fade-out');
-  sceneOverlay.classList.add('jumpscare-flash');
-  setTimeout(() => {
-    sceneOverlay.classList.remove('jumpscare-flash');
-    sceneOverlay.classList.add('locked-overlay');
-  }, 180);
+  sceneOverlay.classList.remove('fade-in', 'fade-out', 'jumpscare-flash', 'locked-overlay');
+  sceneOverlay.style.opacity = '0';
+  setScene(images.jumpscare, '');
 
-  // O som real do jumpscare toca sozinho, sem ser misturado
-  // imediatamente com o efeito de áudio travado.
-  // Assim o efeito "travou" só começa quando o jumpscare terminou.
-  await playOneShotAndWait(jumpscareAudio, 1.0, 5200);
+  // Deixa o frame do jumpscare renderizar antes de iniciar o áudio.
+  await new Promise(requestAnimationFrame);
+  await playJumpscareAudioAndWait(jumpscareAudio, 1.0, 6000);
 
   if (!state.gameLocked) return;
   playProceduralJumpscareAndStuck();
+  await sleep(1800);
+  sceneOverlay.classList.add('locked-overlay');
 }
 
 function handleBack() {
