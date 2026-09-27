@@ -110,7 +110,8 @@ body {
   cursor: default;
 }
 
-#scene-image {
+#scene-image,
+#scene-image-next {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -121,6 +122,18 @@ body {
   -webkit-user-drag: none;
   pointer-events: none;
   filter: brightness(.96) contrast(1.045) saturate(.94);
+}
+
+/* Duas camadas de imagem: a nova cena é preparada antes da revelação,
+   evitando o flash/stutter causado por trocar o src da única imagem visível. */
+#scene-image {
+  opacity: 1;
+  z-index: 1;
+}
+
+#scene-image-next {
+  opacity: 0;
+  z-index: 2;
 }
 
 /* Escurecimento/vinheta muito sutil para dar unidade às imagens */
