@@ -11,6 +11,7 @@ const sceneMessage = $('scene-message');
 
 const doorHandle = $('door-handle');
 const fridgeHotspot = $('fridge-hotspot');
+const fridgeBackHotspot = $('fridge-back-hotspot');
 const bathroomDoorHotspot = $('bathroom-door-hotspot');
 const freezerHotspot = $('freezer-hotspot');
 const bodyHotspot = $('body-hotspot');
@@ -275,7 +276,7 @@ function setHint(show, text = 'Abrir', hotspot = null, event = null) {
 }
 
 function hideAllHotspots() {
-  [doorHandle, fridgeHotspot, bathroomDoorHotspot, freezerHotspot, bodyHotspot]
+  [doorHandle, fridgeHotspot, fridgeBackHotspot, bathroomDoorHotspot, freezerHotspot, bodyHotspot]
     .forEach(h => h.classList.add('hidden'));
   actionBar.classList.add('hidden');
   backButton.classList.add('hidden');
@@ -294,27 +295,50 @@ function showKitchenControls() {
   backButton.classList.remove('hidden');
 }
 
+function setFridgeHotspotBounds(mode) {
+  // A mesma interação acompanha a porta física da geladeira em cada foto.
+  if (mode === 'closed') {
+    fridgeHotspot.style.left = '74%';
+    fridgeHotspot.style.top = '50%';
+    fridgeHotspot.style.width = '24%';
+    fridgeHotspot.style.height = '36%';
+  } else if (mode === 'open') {
+    fridgeHotspot.style.left = '60%';
+    fridgeHotspot.style.top = '46%';
+    fridgeHotspot.style.width = '18%';
+    fridgeHotspot.style.height = '40%';
+  } else {
+    fridgeHotspot.style.left = '74%';
+    fridgeHotspot.style.top = '50%';
+    fridgeHotspot.style.width = '24%';
+    fridgeHotspot.style.height = '36%';
+  }
+}
+
 function showFridgeClosedControls() {
   hideAllHotspots();
+  setFridgeHotspotBounds('closed');
   fridgeHotspot.classList.remove('hidden');
-  actionBar.classList.remove('hidden');
-  actionClose.textContent = 'ABRIR GELADEIRA';
-  actionKitchen.textContent = '← COZINHA';
+  freezerHotspot.classList.remove('hidden');
+  fridgeBackHotspot.classList.remove('hidden');
+  freezerHotspot.setAttribute('aria-label', 'Abrir o freezer');
+  actionBar.classList.add('hidden');
 }
 
 function showFridgeOpenControls() {
   hideAllHotspots();
-  freezerHotspot.classList.remove('hidden');
-  actionBar.classList.remove('hidden');
-  actionClose.textContent = 'FECHAR GELADEIRA';
-  actionKitchen.textContent = '← COZINHA';
+  setFridgeHotspotBounds('open');
+  fridgeHotspot.classList.remove('hidden');
+  fridgeBackHotspot.classList.remove('hidden');
+  actionBar.classList.add('hidden');
 }
 
 function showFreezerControls() {
   hideAllHotspots();
-  actionBar.classList.remove('hidden');
-  actionClose.textContent = 'FECHAR FREEZER';
-  actionKitchen.textContent = '← COZINHA';
+  setFridgeHotspotBounds('freezer');
+  freezerHotspot.classList.remove('hidden');
+  fridgeBackHotspot.classList.remove('hidden');
+  actionBar.classList.add('hidden');
 }
 
 function showBathroomControls() {
@@ -453,7 +477,8 @@ async function closeFridge() {
 }
 
 async function openFreezer() {
-  if (state.transitioning || state.scene !== 'fridge') return;
+  // O freezer só pode ser aberto com a porta inferior da geladeira fechada.
+  if (state.transitioning || state.scene !== 'fridgeClosed') return;
   state.transitioning = true;
   hideAllHotspots();
 
@@ -472,11 +497,11 @@ async function closeFreezer() {
   hideAllHotspots();
 
   playOneShot(freezerCloseAudio, 0.92);
-  setScene(images.fridgeOpen, 'Geladeira aberta');
+  setScene(images.fridgeClosed, 'Geladeira fechada');
   await sleep(180);
 
-  state.scene = 'fridge';
-  showFridgeOpenControls();
+  state.scene = 'fridgeClosed';
+  showFridgeClosedControls();
   state.transitioning = false;
 }
 
@@ -513,10 +538,9 @@ async function kitchenFromFridge() {
     hideAllHotspots();
     playOneShot(freezerCloseAudio, 0.9);
     await sleep(140);
-    playOneShot(fridgeCloseAudio, 0.9);
+    setScene(images.kitchen, 'Uma cozinha escura');
     await fadeAudio(fridgeHumAudio, 0, 400);
     stopAudio(fridgeHumAudio, true);
-    setScene(images.kitchen, 'Uma cozinha escura');
     state.scene = 'kitchen';
     await sleep(500);
     showKitchenControls();
@@ -645,10 +669,17 @@ bindHoverHint(fridgeHotspot, 'Abrir');
 fridgeHotspot.addEventListener('click', () => {
   if (state.scene === 'kitchen') approachFridge();
   else if (state.scene === 'fridgeClosed') openFridge();
+  else if (state.scene === 'fridge') closeFridge();
 });
 
+bindHoverHint(fridgeBackHotspot, 'Voltar');
+fridgeBackHotspot.addEventListener('click', kitchenFromFridge);
+
 bindHoverHint(freezerHotspot, 'Abrir freezer');
-freezerHotspot.addEventListener('click', openFreezer);
+freezerHotspot.addEventListener('click', () => {
+  if (state.scene === 'fridgeClosed') openFreezer();
+  else if (state.scene === 'freezer') closeFreezer();
+});
 
 bindHoverHint(bathroomDoorHotspot, 'Entrar');
 bathroomDoorHotspot.addEventListener('click', enterBathroom);
@@ -661,18 +692,11 @@ backButton.addEventListener('click', () => {
 });
 
 actionClose.addEventListener('click', () => {
-  if (state.scene === 'fridgeClosed') openFridge();
-  else if (state.scene === 'fridge') closeFridge();
-  else if (state.scene === 'freezer') closeFreezer();
-  else if (state.scene === 'bathroom') leaveBathroom();
+  if (state.scene === 'bathroom') leaveBathroom();
 });
 
 actionKitchen.addEventListener('click', () => {
-  if (state.scene === 'fridgeClosed' || state.scene === 'fridge' || state.scene === 'freezer') {
-    kitchenFromFridge();
-  } else if (state.scene === 'bathroom') {
-    leaveBathroom();
-  }
+  if (state.scene === 'bathroom') leaveBathroom();
 });
 
 document.addEventListener('pointerdown', () => {
@@ -683,7 +707,7 @@ document.addEventListener('pointerdown', () => {
     startLoop(kitchenAudio, 0.42);
   }
   if (state.scene === 'bathroom' && fliesAudio.paused) startLoop(fliesAudio, 0.14);
-  if ((state.scene === 'fridge' || state.scene === 'freezer') && fridgeHumAudio.paused) {
+  if (state.scene === 'fridge' && fridgeHumAudio.paused) {
     startLoop(fridgeHumAudio, 0.08);
   }
 });
