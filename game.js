@@ -530,7 +530,7 @@ async function approachFridge() {
   state.transitioning = true;
   hideAllHotspots();
   clearMessage();
-  await transitionScene(images.fridgeClosed, 'Geladeira fechada', 900);
+  await changeInteractionImage(images.fridgeClosed, 'Geladeira fechada');
   await sleep(120);
   state.scene = 'fridgeClosed';
   showFridgeClosedControls();
@@ -693,7 +693,7 @@ async function closeDresser() {
   if (state.transitioning || !['dresser', 'drawerOpen', 'drawerNoKey'].includes(state.scene) || state.gameLocked) return;
   state.transitioning = true;
   hideAllHotspots();
-  await transitionScene(images.bedroom, 'Um quarto escuro', 800);
+  await changeInteractionImage(images.bedroom, 'Um quarto escuro');
   state.scene = 'bedroom';
   showBedroomControls();
   state.transitioning = false;
