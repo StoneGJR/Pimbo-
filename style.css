@@ -116,8 +116,9 @@ body {
 }
 
 .hotspot-entry { left: 6%; top: 60%; width: 24%; height: 17%; }
-.hotspot-fridge { left: 74%; top: 32%; width: 26%; height: 58%; }
-.hotspot-freezer { left: 45%; top: 30%; width: 38%; height: 28%; }
+.hotspot-fridge { left: 74%; top: 50%; width: 24%; height: 36%; }
+.hotspot-fridge-back { left: 0; top: 24%; width: 54%; height: 68%; }
+.hotspot-freezer { left: 74%; top: 32%; width: 24%; height: 19%; }
 .hotspot-bathroom-door { left: 20%; top: 38%; width: 27%; height: 34%; }
 .hotspot-body { left: 14%; top: 49%; width: 52%; height: 38%; }
 
