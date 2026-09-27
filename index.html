@@ -16,17 +16,11 @@
     <section id="scene" class="screen hidden" aria-label="Cena atual">
       <img id="scene-image" src="assets/scenes/scene-01.png" alt="Uma porta metálica escura" draggable="false">
 
-      <!-- Entrada / porta metálica -->
-      <button id="door-handle" class="hotspot hotspot-entry" type="button" aria-label="Abrir a porta de metal"></button>
+      <button id="door-handle" class="hotspot hotspot-entry hidden" type="button" aria-label="Abrir a porta de metal"></button>
 
-      <!-- Cozinha -->
       <button id="fridge-hotspot" class="hotspot hotspot-fridge hidden" type="button" aria-label="Abrir a geladeira"></button>
       <button id="bathroom-door-hotspot" class="hotspot hotspot-bathroom-door hidden" type="button" aria-label="Entrar no banheiro"></button>
-
-      <!-- Geladeira -->
       <button id="freezer-hotspot" class="hotspot hotspot-freezer hidden" type="button" aria-label="Abrir o freezer"></button>
-
-      <!-- Banheiro -->
       <button id="body-hotspot" class="hotspot hotspot-body hidden" type="button" aria-label="Examinar o corpo"></button>
 
       <div id="interaction-hint" class="interaction-hint hidden">Abrir</div>
@@ -43,53 +37,21 @@
     </section>
   </main>
 
-  <!--
-    Os primeiros <source> são os novos sons. Os segundos são fallbacks para os
-    arquivos antigos, caso ainda estejam no repositório.
-  -->
-  <audio id="night-audio" preload="auto" loop>
-    <source src="assets/sounds/night-ambient.mp3" type="audio/mpeg">
-    <source src="assets/sounds/night-ambient.wav" type="audio/wav">
-  </audio>
-  <audio id="kitchen-audio" preload="auto" loop>
-    <source src="assets/sounds/kitchen-roomtone.mp3" type="audio/mpeg">
-    <source src="assets/sounds/kitchen-ambient.wav" type="audio/wav">
-  </audio>
-  <audio id="fridge-hum-audio" preload="auto" loop>
-    <source src="assets/sounds/fridge-hum.mp3" type="audio/mpeg">
-  </audio>
-  <audio id="flies-audio" preload="auto" loop>
-    <source src="assets/sounds/flies.mp3" type="audio/mpeg">
-  </audio>
+  <!-- Sons de ambiente: todos são loops. -->
+  <audio id="night-audio" preload="auto" loop src="assets/sounds/nightambient.mp3"></audio>
+  <audio id="kitchen-audio" preload="auto" loop src="assets/sounds/kitchenambient.mp3"></audio>
+  <audio id="flies-audio" preload="auto" loop src="assets/sounds/flies.mp3"></audio>
+  <audio id="fridge-hum-audio" preload="auto" loop src="assets/sounds/fridgehum.mp3"></audio>
 
-  <audio id="handle-audio" preload="auto">
-    <source src="assets/sounds/door-handle.mp3" type="audio/mpeg">
-    <source src="assets/sounds/door-handle.wav" type="audio/wav">
-  </audio>
-  <audio id="metal-open-audio" preload="auto">
-    <source src="assets/sounds/metal-door-open.mp3" type="audio/mpeg">
-    <source src="assets/sounds/door-open.wav" type="audio/wav">
-  </audio>
-  <audio id="wood-open-audio" preload="auto">
-    <source src="assets/sounds/wood-door-open.mp3" type="audio/mpeg">
-    <source src="assets/sounds/wood-door-open.wav" type="audio/wav">
-  </audio>
-  <audio id="wood-close-audio" preload="auto">
-    <source src="assets/sounds/wood-door-close.mp3" type="audio/mpeg">
-    <source src="assets/sounds/door-close.wav" type="audio/wav">
-  </audio>
-  <audio id="fridge-open-audio" preload="auto">
-    <source src="assets/sounds/fridge-open.mp3" type="audio/mpeg">
-  </audio>
-  <audio id="fridge-close-audio" preload="auto">
-    <source src="assets/sounds/fridge-close.mp3" type="audio/mpeg">
-  </audio>
-  <audio id="freezer-open-audio" preload="auto">
-    <source src="assets/sounds/freezer-open.mp3" type="audio/mpeg">
-  </audio>
-  <audio id="freezer-close-audio" preload="auto">
-    <source src="assets/sounds/freezer-close.mp3" type="audio/mpeg">
-  </audio>
+  <!-- Efeitos únicos: nunca fazem loop. -->
+  <audio id="handle-audio" preload="auto" src="assets/sounds/doorhandle.mp3"></audio>
+  <audio id="metal-open-audio" preload="auto" src="assets/sounds/metaldooropen.mp3"></audio>
+  <audio id="wood-open-audio" preload="auto" src="assets/sounds/wooddooropen.mp3"></audio>
+  <audio id="wood-close-audio" preload="auto" src="assets/sounds/wooddoorclose.mp3"></audio>
+  <audio id="fridge-open-audio" preload="auto" src="assets/sounds/fridgeopen.mp3"></audio>
+  <audio id="fridge-close-audio" preload="auto" src="assets/sounds/fridgeclose.mp3"></audio>
+  <audio id="freezer-open-audio" preload="auto" src="assets/sounds/freezeropen.mp3"></audio>
+  <audio id="freezer-close-audio" preload="auto" src="assets/sounds/freezerclose.mp3"></audio>
 
   <script src="game.js"></script>
 </body>
