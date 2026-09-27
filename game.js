@@ -290,34 +290,47 @@ function showEntryControls() {
 
 function showKitchenControls() {
   hideAllHotspots();
+  // Volta às coordenadas da geladeira na imagem normal da cozinha.
+  setFridgeHotspotBounds('kitchen');
   fridgeHotspot.classList.remove('hidden');
   bathroomDoorHotspot.classList.remove('hidden');
   backButton.classList.remove('hidden');
 }
 
+function applyBounds(hotspot, left, top, width, height) {
+  hotspot.style.left = left;
+  hotspot.style.top = top;
+  hotspot.style.width = width;
+  hotspot.style.height = height;
+}
+
 function setFridgeHotspotBounds(mode) {
-  // A mesma interação acompanha a porta física da geladeira em cada foto.
-  if (mode === 'closed') {
-    fridgeHotspot.style.left = '74%';
-    fridgeHotspot.style.top = '50%';
-    fridgeHotspot.style.width = '24%';
-    fridgeHotspot.style.height = '36%';
+  // Cada foto tem uma posição diferente para a porta inferior.
+  if (mode === 'kitchen') {
+    applyBounds(fridgeHotspot, '74%', '50%', '24%', '36%');
+  } else if (mode === 'closed') {
+    // Geladeira fechada: somente a porta inferior.
+    applyBounds(fridgeHotspot, '54%', '47%', '34%', '43%');
   } else if (mode === 'open') {
-    fridgeHotspot.style.left = '60%';
-    fridgeHotspot.style.top = '46%';
-    fridgeHotspot.style.width = '18%';
-    fridgeHotspot.style.height = '40%';
-  } else {
-    fridgeHotspot.style.left = '74%';
-    fridgeHotspot.style.top = '50%';
-    fridgeHotspot.style.width = '24%';
-    fridgeHotspot.style.height = '36%';
+    // Geladeira aberta: a porta que está projetada para a direita.
+    applyBounds(fridgeHotspot, '73%', '45%', '26%', '44%');
+  }
+}
+
+function setFreezerHotspotBounds(mode) {
+  if (mode === 'closed') {
+    // Só a porta do freezer na foto fechada.
+    applyBounds(freezerHotspot, '54%', '28%', '34%', '20%');
+  } else if (mode === 'open') {
+    // Foto do freezer aberto: clique na própria porta para fechá-la.
+    applyBounds(freezerHotspot, '76%', '23%', '23%', '25%');
   }
 }
 
 function showFridgeClosedControls() {
   hideAllHotspots();
   setFridgeHotspotBounds('closed');
+  setFreezerHotspotBounds('closed');
   fridgeHotspot.classList.remove('hidden');
   freezerHotspot.classList.remove('hidden');
   fridgeBackHotspot.classList.remove('hidden');
@@ -328,6 +341,7 @@ function showFridgeClosedControls() {
 function showFridgeOpenControls() {
   hideAllHotspots();
   setFridgeHotspotBounds('open');
+  // Com a porta inferior aberta, o freezer não pode ser clicado.
   fridgeHotspot.classList.remove('hidden');
   fridgeBackHotspot.classList.remove('hidden');
   actionBar.classList.add('hidden');
@@ -335,7 +349,8 @@ function showFridgeOpenControls() {
 
 function showFreezerControls() {
   hideAllHotspots();
-  setFridgeHotspotBounds('freezer');
+  setFreezerHotspotBounds('open');
+  // Neste estado a porta inferior continua fechada e não é interativa.
   freezerHotspot.classList.remove('hidden');
   fridgeBackHotspot.classList.remove('hidden');
   actionBar.classList.add('hidden');
@@ -646,15 +661,17 @@ async function playIntro() {
   intro.classList.add('hidden');
 }
 
-function bindHoverHint(hotspot, text) {
-  hotspot.addEventListener('pointerenter', event => setHint(true, text, hotspot, event));
+function bindHoverHint(hotspot, textOrGetter) {
+  const getText = () => typeof textOrGetter === 'function' ? textOrGetter() : textOrGetter;
+
+  hotspot.addEventListener('pointerenter', event => setHint(true, getText(), hotspot, event));
   hotspot.addEventListener('pointermove', event => {
     if (hintHotspot === hotspot) moveHintToPointer(event);
   });
   hotspot.addEventListener('pointerleave', () => {
     if (hintHotspot === hotspot) setHint(false);
   });
-  hotspot.addEventListener('focus', () => setHint(true, text, hotspot));
+  hotspot.addEventListener('focus', () => setHint(true, getText(), hotspot));
   hotspot.addEventListener('blur', () => {
     if (hintHotspot === hotspot) setHint(false);
   });
@@ -665,7 +682,7 @@ startButton.addEventListener('click', playIntro);
 bindHoverHint(doorHandle, 'Abrir');
 doorHandle.addEventListener('click', enterKitchen);
 
-bindHoverHint(fridgeHotspot, 'Abrir');
+bindHoverHint(fridgeHotspot, () => state.scene === 'fridge' ? 'Fechar' : 'Abrir');
 fridgeHotspot.addEventListener('click', () => {
   if (state.scene === 'kitchen') approachFridge();
   else if (state.scene === 'fridgeClosed') openFridge();
@@ -675,7 +692,7 @@ fridgeHotspot.addEventListener('click', () => {
 bindHoverHint(fridgeBackHotspot, 'Voltar');
 fridgeBackHotspot.addEventListener('click', kitchenFromFridge);
 
-bindHoverHint(freezerHotspot, 'Abrir freezer');
+bindHoverHint(freezerHotspot, () => state.scene === 'freezer' ? 'Fechar' : 'Abrir');
 freezerHotspot.addEventListener('click', () => {
   if (state.scene === 'fridgeClosed') openFreezer();
   else if (state.scene === 'freezer') closeFreezer();
