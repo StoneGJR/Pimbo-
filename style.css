@@ -117,7 +117,7 @@ body {
 
 .hotspot-entry { left: 6%; top: 60%; width: 24%; height: 17%; }
 .hotspot-fridge { left: 74%; top: 50%; width: 24%; height: 36%; }
-.hotspot-fridge-back { left: 2.5%; top: 3.5%; width: 16%; height: 11%; }
+.hotspot-fridge-back { left: 4%; top: auto; bottom: 4%; width: 30%; height: 15%; }
 .hotspot-freezer { left: 74%; top: 32%; width: 24%; height: 19%; }
 .hotspot-bathroom-door { left: 20%; top: 38%; width: 27%; height: 34%; }
 .hotspot-body { left: 14%; top: 49%; width: 52%; height: 38%; }
@@ -129,18 +129,18 @@ body {
   border: 0;
   border-radius: 0;
   background: transparent;
-  color: rgba(255,255,255,.78);
+  color: rgba(255,255,255,.84);
   font-family: 'Courier New', monospace;
-  font-size: clamp(9px, 2.2vw, 13px);
+  font-size: clamp(11px, 2.8vw, 16px);
   letter-spacing: .04em;
   pointer-events: none;
   white-space: nowrap;
-  opacity: .82;
+  opacity: .88;
   text-shadow: 0 1px 6px rgba(0,0,0,.95), 0 0 8px rgba(0,0,0,.8);
   transition: opacity .12s ease;
 }
 
-.interaction-hint.show { opacity: .82; }
+.interaction-hint.show { opacity: .88; }
 
 .action-bar {
   position: absolute;
@@ -231,7 +231,7 @@ body {
 }
 
 .scene-message.visible {
-  opacity: .82;
+  opacity: .88;
   transform: translateY(0);
 }
 
