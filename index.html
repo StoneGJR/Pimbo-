@@ -16,8 +16,25 @@
     <section id="scene" class="screen hidden" aria-label="Cena atual">
       <img id="scene-image" src="assets/scenes/scene-01.png" alt="Uma porta metálica escura" draggable="false">
 
-      <button id="door-handle" class="hotspot" type="button" aria-label="Abrir a porta"></button>
+      <!-- Entrada / porta metálica -->
+      <button id="door-handle" class="hotspot hotspot-entry" type="button" aria-label="Abrir a porta de metal"></button>
+
+      <!-- Cozinha -->
+      <button id="fridge-hotspot" class="hotspot hotspot-fridge hidden" type="button" aria-label="Abrir a geladeira"></button>
+      <button id="bathroom-door-hotspot" class="hotspot hotspot-bathroom-door hidden" type="button" aria-label="Entrar no banheiro"></button>
+
+      <!-- Geladeira -->
+      <button id="freezer-hotspot" class="hotspot hotspot-freezer hidden" type="button" aria-label="Abrir o freezer"></button>
+
+      <!-- Banheiro -->
+      <button id="body-hotspot" class="hotspot hotspot-body hidden" type="button" aria-label="Examinar o corpo"></button>
+
       <div id="interaction-hint" class="interaction-hint hidden">Abrir</div>
+
+      <div id="action-bar" class="action-bar hidden">
+        <button id="action-close" type="button">FECHAR</button>
+        <button id="action-kitchen" type="button">← COZINHA</button>
+      </div>
 
       <button id="back-button" class="nav-arrow hidden" type="button" aria-label="Voltar para a cena anterior">‹</button>
 
@@ -26,12 +43,53 @@
     </section>
   </main>
 
-  <!-- Áudios reais: tocar após o clique inicial evita bloqueios de autoplay. -->
-  <audio id="night-audio" src="assets/sounds/night-ambient.wav" preload="auto" loop></audio>
-  <audio id="handle-audio" src="assets/sounds/door-handle.wav" preload="auto"></audio>
-  <audio id="open-audio" src="assets/sounds/door-open.wav" preload="auto"></audio>
-  <audio id="close-audio" src="assets/sounds/door-close.wav" preload="auto"></audio>
-  <audio id="kitchen-audio" src="assets/sounds/kitchen-ambient.wav" preload="auto" loop></audio>
+  <!--
+    Os primeiros <source> são os novos sons. Os segundos são fallbacks para os
+    arquivos antigos, caso ainda estejam no repositório.
+  -->
+  <audio id="night-audio" preload="auto" loop>
+    <source src="assets/sounds/night-ambient.mp3" type="audio/mpeg">
+    <source src="assets/sounds/night-ambient.wav" type="audio/wav">
+  </audio>
+  <audio id="kitchen-audio" preload="auto" loop>
+    <source src="assets/sounds/kitchen-roomtone.mp3" type="audio/mpeg">
+    <source src="assets/sounds/kitchen-ambient.wav" type="audio/wav">
+  </audio>
+  <audio id="fridge-hum-audio" preload="auto" loop>
+    <source src="assets/sounds/fridge-hum.mp3" type="audio/mpeg">
+  </audio>
+  <audio id="flies-audio" preload="auto" loop>
+    <source src="assets/sounds/flies.mp3" type="audio/mpeg">
+  </audio>
+
+  <audio id="handle-audio" preload="auto">
+    <source src="assets/sounds/door-handle.mp3" type="audio/mpeg">
+    <source src="assets/sounds/door-handle.wav" type="audio/wav">
+  </audio>
+  <audio id="metal-open-audio" preload="auto">
+    <source src="assets/sounds/metal-door-open.mp3" type="audio/mpeg">
+    <source src="assets/sounds/door-open.wav" type="audio/wav">
+  </audio>
+  <audio id="wood-open-audio" preload="auto">
+    <source src="assets/sounds/wood-door-open.mp3" type="audio/mpeg">
+    <source src="assets/sounds/wood-door-open.wav" type="audio/wav">
+  </audio>
+  <audio id="wood-close-audio" preload="auto">
+    <source src="assets/sounds/wood-door-close.mp3" type="audio/mpeg">
+    <source src="assets/sounds/door-close.wav" type="audio/wav">
+  </audio>
+  <audio id="fridge-open-audio" preload="auto">
+    <source src="assets/sounds/fridge-open.mp3" type="audio/mpeg">
+  </audio>
+  <audio id="fridge-close-audio" preload="auto">
+    <source src="assets/sounds/fridge-close.mp3" type="audio/mpeg">
+  </audio>
+  <audio id="freezer-open-audio" preload="auto">
+    <source src="assets/sounds/freezer-open.mp3" type="audio/mpeg">
+  </audio>
+  <audio id="freezer-close-audio" preload="auto">
+    <source src="assets/sounds/freezer-close.mp3" type="audio/mpeg">
+  </audio>
 
   <script src="game.js"></script>
 </body>
