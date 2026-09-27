@@ -293,6 +293,23 @@ async function transitionScene(src, alt, fadeMs = 950) {
   sceneImageNext.style.transition = '';
 }
 
+
+/**
+ * Troca instantânea usada para interações no mesmo local.
+ * Não há fade: a imagem muda diretamente, enquanto as transições entre
+ * ambientes continuam usando transitionScene().
+ */
+async function changeInteractionImage(src, alt) {
+  await waitForImage(src);
+  sceneImage.style.transition = 'none';
+  sceneImageNext.style.transition = 'none';
+  sceneImage.src = src;
+  sceneImage.alt = alt;
+  sceneImage.style.opacity = '1';
+  sceneImageNext.style.opacity = '0';
+  sceneImageNext.src = src;
+}
+
 function clearMessage() {
   if (messageTimer) clearTimeout(messageTimer);
   if (messageFadeTimer) clearTimeout(messageFadeTimer);
@@ -352,7 +369,7 @@ function positionBackHotspot(context) {
   if (context === 'kitchen') {
     applyBounds(backHotspot, '1%', '88%', '18%', '11%');
   } else {
-    applyBounds(backHotspot, '1%', '18%', '12%', '64%');
+    applyBounds(backHotspot, '1%', '84%', '19%', '14%');
   }
 }
 
@@ -525,7 +542,7 @@ async function openFridge() {
   state.transitioning = true;
   hideAllHotspots();
   playOneShot(fridgeOpenAudio, 0.9);
-  await transitionScene(images.fridgeOpen, 'Geladeira aberta', 850);
+  await changeInteractionImage(images.fridgeOpen, 'Geladeira aberta');
   startLoop(fridgeHumAudio, 0.08, true);
   await sleep(120);
   state.scene = 'fridge';
@@ -540,7 +557,7 @@ async function closeFridge() {
   playOneShot(fridgeCloseAudio, 0.92);
   fadeAudio(fridgeHumAudio, 0, 400);
   stopAudio(fridgeHumAudio, true);
-  await transitionScene(images.fridgeClosed, 'Geladeira fechada', 850);
+  await changeInteractionImage(images.fridgeClosed, 'Geladeira fechada');
   await sleep(120);
   state.scene = 'fridgeClosed';
   showFridgeClosedControls();
@@ -552,7 +569,7 @@ async function openFreezer() {
   state.transitioning = true;
   hideAllHotspots();
   playOneShot(freezerOpenAudio, 0.9);
-  await transitionScene(images.freezerOpen, 'Freezer aberto', 850);
+  await changeInteractionImage(images.freezerOpen, 'Freezer aberto');
   await sleep(120);
   state.scene = 'freezer';
   showFreezerControls();
@@ -564,7 +581,7 @@ async function closeFreezer() {
   state.transitioning = true;
   hideAllHotspots();
   playOneShot(freezerCloseAudio, 0.92);
-  await transitionScene(images.fridgeClosed, 'Geladeira fechada', 850);
+  await changeInteractionImage(images.fridgeClosed, 'Geladeira fechada');
   await sleep(120);
   state.scene = 'fridgeClosed';
   showFridgeClosedControls();
@@ -599,7 +616,7 @@ async function enterBathroom() {
   playOneShot(woodOpenAudio, 0.88);
 
   // Primeiro revela a porta aberta; só depois faz a entrada no banheiro.
-  await transitionScene(images.bathroomOpen, 'Porta do banheiro aberta', 1000);
+  await changeInteractionImage(images.bathroomOpen, 'Porta do banheiro aberta');
   await sleep(1400);
   await transitionScene(images.bathroom, 'Banheiro escuro', 1050);
 
@@ -666,7 +683,7 @@ async function openDresser() {
   if (state.transitioning || state.scene !== 'bedroom' || state.gameLocked) return;
   state.transitioning = true;
   hideAllHotspots();
-  await transitionScene(images.dresser, 'Uma cômoda com um celular', 800);
+  await changeInteractionImage(images.dresser, 'Uma cômoda com um celular');
   state.scene = 'dresser';
   showDresserControls();
   state.transitioning = false;
@@ -687,7 +704,7 @@ async function openDrawer() {
   state.transitioning = true;
   hideAllHotspots();
   playOneShot(drawerOpenAudio, 0.82);
-  await transitionScene(images.drawerOpen, 'Cômoda com a gaveta aberta', 700);
+  await changeInteractionImage(images.drawerOpen, 'Cômoda com a gaveta aberta');
   state.scene = 'drawerOpen';
   showDrawerControls();
   state.transitioning = false;
@@ -699,7 +716,7 @@ async function collectKey() {
   hideAllHotspots();
   state.hasKey = true;
   playOneShot(keyCollectedAudio, 0.88);
-  await transitionScene(images.drawerNoKey, 'Cômoda sem a chave', 700);
+  await changeInteractionImage(images.drawerNoKey, 'Cômoda sem a chave');
   state.scene = 'drawerNoKey';
   showDrawerNoKeyControls();
   state.transitioning = false;
@@ -723,7 +740,7 @@ async function collectPhone() {
 
   // O som do celular não bloqueia a troca da imagem.
   playOneShot(phoneCollectedAudio, 0.92);
-  await transitionScene(images.dresserNoPhone, 'A cômoda sem o celular', 850);
+  await changeInteractionImage(images.dresserNoPhone, 'A cômoda sem o celular');
   await sleep(900);
   await runFootstepSequence();
   await sleep(650);
@@ -861,7 +878,7 @@ async function closeDrawer() {
   if (state.transitioning || !['drawerOpen', 'drawerNoKey'].includes(state.scene) || state.gameLocked) return;
   state.transitioning = true;
   hideAllHotspots();
-  await transitionScene(images.dresser, 'Uma cômoda com um celular', 700);
+  await changeInteractionImage(images.dresser, 'Uma cômoda com um celular');
   state.scene = 'dresser';
   showDresserControls();
   state.transitioning = false;
@@ -916,16 +933,32 @@ function pointInsideElement(element, clientX, clientY) {
 
 function getPointerHotspot(event) {
   const elements = document.elementsFromPoint(event.clientX, event.clientY);
-  for (const element of elements) {
-    if (!boundHotspots.includes(element)) continue;
-    if (element.classList.contains('hidden')) continue;
+  const priority = [
+    fridgeHotspot,
+    freezerHotspot,
+    dresserHotspot,
+    phoneHotspot,
+    drawerHotspot,
+    keyHotspot,
+    bodyHotspot,
+    bathroomDoorHotspot,
+    bedroomDoorHotspot,
+    doorHandle,
+    backHotspot
+  ];
 
-    // Regra explícita: a área de Voltar da cozinha jamais pode competir com
-    // a geladeira. Mesmo que algum CSS futuro cause sobreposição, a geladeira ganha.
-    if (element === backHotspot && pointInsideElement(fridgeHotspot, event.clientX, event.clientY)) {
-      continue;
+  const hit = new Set(elements.filter(el => boundHotspots.includes(el) && !el.classList.contains('hidden')));
+  for (const hotspot of priority) {
+    if (!hit.has(hotspot)) continue;
+
+    // O retorno é sempre secundário. Se a área de algum objeto estiver sob
+    // o cursor, mostramos somente a ação daquele objeto.
+    if (hotspot === backHotspot) {
+      if (pointInsideElement(fridgeHotspot, event.clientX, event.clientY)) continue;
+      if (pointInsideElement(freezerHotspot, event.clientX, event.clientY)) continue;
+      if (pointInsideElement(dresserHotspot, event.clientX, event.clientY)) continue;
     }
-    return element;
+    return hotspot;
   }
   return null;
 }
