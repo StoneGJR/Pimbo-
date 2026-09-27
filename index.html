@@ -17,24 +17,19 @@
       <img id="scene-image" src="assets/scenes/scene-01.png" alt="Uma porta metálica escura" draggable="false">
 
       <button id="door-handle" class="hotspot hotspot-entry hidden" type="button" aria-label="Abrir a porta de metal"></button>
-
-      <!-- Cozinha: clique na geladeira para se aproximar. Nas fotos da geladeira, o mesmo hotspot acompanha a porta. -->
-      <button id="fridge-hotspot" class="hotspot hotspot-fridge hidden" type="button" aria-label="Abrir a porta da geladeira"></button>
-      <button id="fridge-back-hotspot" class="hotspot hotspot-fridge-back hidden" type="button" aria-label="Voltar para a cozinha"></button>
+      <button id="fridge-hotspot" class="hotspot hotspot-fridge hidden" type="button" aria-label="Interagir com a geladeira"></button>
+      <button id="freezer-hotspot" class="hotspot hotspot-freezer hidden" type="button" aria-label="Interagir com o freezer"></button>
       <button id="bathroom-door-hotspot" class="hotspot hotspot-bathroom-door hidden" type="button" aria-label="Entrar no banheiro"></button>
-      <button id="freezer-hotspot" class="hotspot hotspot-freezer hidden" type="button" aria-label="Abrir o freezer"></button>
+      <button id="bedroom-door-hotspot" class="hotspot hotspot-bedroom-door hidden" type="button" aria-label="Entrar no quarto"></button>
+      <button id="back-hotspot" class="hotspot hotspot-back hidden" type="button" aria-label="Voltar"></button>
+
+      <button id="dresser-hotspot" class="hotspot hotspot-dresser hidden" type="button" aria-label="Examinar a cômoda"></button>
+      <button id="phone-hotspot" class="hotspot hotspot-phone hidden" type="button" aria-label="Pegar o celular"></button>
+      <button id="drawer-hotspot" class="hotspot hotspot-drawer hidden" type="button" aria-label="Abrir a gaveta"></button>
+      <button id="key-hotspot" class="hotspot hotspot-key hidden" type="button" aria-label="Pegar a chave"></button>
       <button id="body-hotspot" class="hotspot hotspot-body hidden" type="button" aria-label="Examinar o corpo"></button>
 
-      <!-- Texto discreto que acompanha o ponteiro do mouse; não é mais um ícone fixo. -->
       <div id="interaction-hint" class="interaction-hint hidden">Abrir</div>
-
-      <div id="action-bar" class="action-bar hidden">
-        <button id="action-close" type="button">FECHAR</button>
-        <button id="action-kitchen" type="button">← COZINHA</button>
-      </div>
-
-      <button id="back-button" class="nav-arrow hidden" type="button" aria-label="Voltar para a cena anterior">‹</button>
-
       <div id="scene-message" class="scene-message hidden"></div>
       <div id="scene-overlay" aria-hidden="true"></div>
     </section>
@@ -53,6 +48,14 @@
   <audio id="fridge-close-audio" preload="auto" src="assets/sounds/fridgeclose.mp3"></audio>
   <audio id="freezer-open-audio" preload="auto" src="assets/sounds/freezeropen.mp3"></audio>
   <audio id="freezer-close-audio" preload="auto" src="assets/sounds/freezerclose.mp3"></audio>
+
+  <audio id="slow-steps-audio" preload="auto" src="assets/sounds/passolento.mp3"></audio>
+  <audio id="medium-steps-audio" preload="auto" src="assets/sounds/passomedio.mp3"></audio>
+  <audio id="fast-steps-audio" preload="auto" src="assets/sounds/passorapido.mp3"></audio>
+  <audio id="very-fast-steps-audio" preload="auto" src="assets/sounds/passomuitorapido.mp3"></audio>
+  <audio id="key-collected-audio" preload="auto" src="assets/sounds/chavecoletada.mp3"></audio>
+  <audio id="drawer-open-audio" preload="auto" src="assets/sounds/gavetaabrindo.mp3"></audio>
+  <audio id="phone-collected-audio" preload="auto" src="assets/sounds/celularcoletado.mp3"></audio>
 
   <script src="game.js"></script>
 </body>
