@@ -190,6 +190,7 @@ body {
 }
 
 .hotspot-fridge {
+  z-index: 20;
   left: 74%;
   top: 32%;
   width: 26%;
@@ -218,6 +219,7 @@ body {
 }
 
 .hotspot-back {
+  z-index: 17;
   left: 2%;
   top: 70%;
   width: 22%;
