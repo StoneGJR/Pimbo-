@@ -40,6 +40,7 @@ const veryFastStepsAudio = $('very-fast-steps-audio');
 const keyCollectedAudio = $('key-collected-audio');
 const drawerOpenAudio = $('drawer-open-audio');
 const phoneCollectedAudio = $('phone-collected-audio');
+const jumpscareAudio = $('jumpscare-audio');
 
 const PATH = 'assets/scenes/';
 const images = {
@@ -376,7 +377,7 @@ function prepareAudioEvents() {
   [nightAudio, kitchenAudio, fliesAudio, fridgeHumAudio, handleAudio, metalOpenAudio,
    woodOpenAudio, woodCloseAudio, fridgeOpenAudio, fridgeCloseAudio, freezerOpenAudio,
    freezerCloseAudio, slowStepsAudio, mediumStepsAudio, fastStepsAudio, veryFastStepsAudio,
-   keyCollectedAudio, drawerOpenAudio, phoneCollectedAudio].forEach(audio => {
+   keyCollectedAudio, drawerOpenAudio, phoneCollectedAudio, jumpscareAudio].forEach(audio => {
     if (!audio) return;
     audio.preload = 'auto';
     audio.addEventListener('error', () => console.warn('Áudio não encontrado:', audio.currentSrc || audio.src));
@@ -693,7 +694,7 @@ function stopAllGameAudio() {
   [nightAudio, kitchenAudio, fliesAudio, fridgeHumAudio, handleAudio, metalOpenAudio,
    woodOpenAudio, woodCloseAudio, fridgeOpenAudio, fridgeCloseAudio, freezerOpenAudio,
    freezerCloseAudio, slowStepsAudio, mediumStepsAudio, fastStepsAudio, veryFastStepsAudio,
-   keyCollectedAudio, drawerOpenAudio, phoneCollectedAudio].forEach(a => stopAudio(a, true));
+   keyCollectedAudio, drawerOpenAudio, phoneCollectedAudio, jumpscareAudio].forEach(a => stopAudio(a, true));
   currentStepAudio = null;
 }
 
@@ -751,13 +752,15 @@ function playProceduralJumpscareAndStuck() {
   source.stop(now + 1.6);
 }
 
-function triggerJumpscareLock() {
+async function triggerJumpscareLock() {
   if (state.gameLocked) return;
   state.gameLocked = true;
   state.transitioning = false;
   hideAllHotspots();
   clearMessage();
   stopAllGameAudio();
+
+  // A imagem entra junto com o impacto visual.
   setScene(images.jumpscare, '');
   scene.classList.add('game-locked');
   sceneOverlay.classList.remove('fade-in', 'fade-out');
@@ -766,6 +769,13 @@ function triggerJumpscareLock() {
     sceneOverlay.classList.remove('jumpscare-flash');
     sceneOverlay.classList.add('locked-overlay');
   }, 180);
+
+  // O som real do jumpscare toca sozinho, sem ser misturado
+  // imediatamente com o efeito de áudio travado.
+  // Assim o efeito "travou" só começa quando o jumpscare terminou.
+  await playOneShotAndWait(jumpscareAudio, 1.0, 5200);
+
+  if (!state.gameLocked) return;
   playProceduralJumpscareAndStuck();
 }
 
