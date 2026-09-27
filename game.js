@@ -11,15 +11,15 @@ const sceneMessage = $('scene-message');
 
 const doorHandle = $('door-handle');
 const fridgeHotspot = $('fridge-hotspot');
-const fridgeBackHotspot = $('fridge-back-hotspot');
-const bathroomDoorHotspot = $('bathroom-door-hotspot');
 const freezerHotspot = $('freezer-hotspot');
+const bathroomDoorHotspot = $('bathroom-door-hotspot');
+const bedroomDoorHotspot = $('bedroom-door-hotspot');
+const backHotspot = $('back-hotspot');
+const dresserHotspot = $('dresser-hotspot');
+const phoneHotspot = $('phone-hotspot');
+const drawerHotspot = $('drawer-hotspot');
+const keyHotspot = $('key-hotspot');
 const bodyHotspot = $('body-hotspot');
-const backButton = $('back-button');
-
-const actionBar = $('action-bar');
-const actionClose = $('action-close');
-const actionKitchen = $('action-kitchen');
 
 const nightAudio = $('night-audio');
 const kitchenAudio = $('kitchen-audio');
@@ -33,9 +33,15 @@ const fridgeOpenAudio = $('fridge-open-audio');
 const fridgeCloseAudio = $('fridge-close-audio');
 const freezerOpenAudio = $('freezer-open-audio');
 const freezerCloseAudio = $('freezer-close-audio');
+const slowStepsAudio = $('slow-steps-audio');
+const mediumStepsAudio = $('medium-steps-audio');
+const fastStepsAudio = $('fast-steps-audio');
+const veryFastStepsAudio = $('very-fast-steps-audio');
+const keyCollectedAudio = $('key-collected-audio');
+const drawerOpenAudio = $('drawer-open-audio');
+const phoneCollectedAudio = $('phone-collected-audio');
 
 const PATH = 'assets/scenes/';
-
 const images = {
   first: `${PATH}scene-01.png`,
   kitchen: `${PATH}scene-02.png`,
@@ -43,7 +49,13 @@ const images = {
   fridgeOpen: `${PATH}geladeiraportaaberta.png`,
   freezerOpen: `${PATH}geladeirafreezeraberto.png`,
   bathroomOpen: `${PATH}cozinhabanheiroaberto.png`,
-  bathroom: `${PATH}banheiroazul.png`
+  bathroom: `${PATH}banheiroazul.png`,
+  bedroom: `${PATH}quartoverde.png`,
+  dresser: `${PATH}comodacomcelular.png`,
+  dresserNoPhone: `${PATH}comodasemcelular.png`,
+  drawerOpen: `${PATH}comodagavetaaberta.png`,
+  drawerNoKey: `${PATH}comodagavetasemchave.png`,
+  jumpscare: `${PATH}jumpscare1.png`
 };
 
 const story = [
@@ -62,13 +74,18 @@ const state = {
   started: false,
   transitioning: false,
   scene: 'entry',
-  audioUnlocked: false
+  audioUnlocked: false,
+  hasKey: false,
+  phoneTaken: false,
+  gameLocked: false
 };
 
 let typewriterContext = null;
 let messageTimer = null;
 let messageFadeTimer = null;
 let hintHotspot = null;
+let currentStepAudio = null;
+let stuckAudioTimer = null;
 
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -91,36 +108,29 @@ function initTypewriterAudio() {
   if (typewriterContext) return;
   const AudioCtx = window.AudioContext || window.webkitAudioContext;
   if (!AudioCtx) return;
-
   try {
     typewriterContext = new AudioCtx();
-    if (typewriterContext.state === 'suspended') {
-      typewriterContext.resume().catch(() => {});
-    }
+    if (typewriterContext.state === 'suspended') typewriterContext.resume().catch(() => {});
   } catch (error) {
-    console.warn('Máquina de escrever indisponível:', error);
+    console.warn('Áudio procedural indisponível:', error);
   }
 }
 
 function typeKeySound() {
-  if (!typewriterContext) return;
+  if (!typewriterContext || state.gameLocked) return;
   const ctx = typewriterContext;
   if (ctx.state === 'suspended') ctx.resume().catch(() => {});
-
   const now = ctx.currentTime;
   const osc = ctx.createOscillator();
   const gain = ctx.createGain();
   const filter = ctx.createBiquadFilter();
-
   osc.type = 'square';
   osc.frequency.setValueAtTime(1180 + Math.random() * 360, now);
   filter.type = 'highpass';
   filter.frequency.setValueAtTime(540, now);
-
   gain.gain.setValueAtTime(0.0001, now);
   gain.gain.exponentialRampToValueAtTime(0.045, now + 0.003);
   gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.035);
-
   osc.connect(filter);
   filter.connect(gain);
   gain.connect(ctx.destination);
@@ -134,16 +144,14 @@ function setVolume(audio, value) {
 }
 
 function startLoop(audio, volume, restart = false) {
-  if (!audio) return Promise.resolve();
+  if (!audio || state.gameLocked) return Promise.resolve();
   audio.loop = true;
   setVolume(audio, volume);
   if (restart) {
     try { audio.currentTime = 0; } catch (_) {}
   }
   const promise = audio.play();
-  return promise && promise.catch ? promise.catch(error => {
-    console.warn('Falha ao iniciar loop:', audio.src, error);
-  }) : Promise.resolve();
+  return promise && promise.catch ? promise.catch(() => {}) : Promise.resolve();
 }
 
 function stopAudio(audio, reset = false) {
@@ -155,22 +163,17 @@ function stopAudio(audio, reset = false) {
 }
 
 function playOneShot(audio, volume = 0.9) {
-  if (!audio) return Promise.resolve();
-
+  if (!audio || state.gameLocked) return Promise.resolve();
   try { audio.pause(); } catch (_) {}
   try { audio.currentTime = 0; } catch (_) {}
   audio.loop = false;
   setVolume(audio, volume);
-
   const promise = audio.play();
-  return promise && promise.catch ? promise.catch(error => {
-    console.warn('Falha ao tocar efeito:', audio.src, error);
-  }) : Promise.resolve();
+  return promise && promise.catch ? promise.catch(() => {}) : Promise.resolve();
 }
 
 function playOneShotAndWait(audio, volume = 0.9, maxWaitMs = 5000) {
-  if (!audio) return Promise.resolve();
-
+  if (!audio || state.gameLocked) return Promise.resolve();
   try { audio.pause(); } catch (_) {}
   try { audio.currentTime = 0; } catch (_) {}
   audio.loop = false;
@@ -179,7 +182,6 @@ function playOneShotAndWait(audio, volume = 0.9, maxWaitMs = 5000) {
   return new Promise(resolve => {
     let finished = false;
     let timer = null;
-
     const finish = () => {
       if (finished) return;
       finished = true;
@@ -187,17 +189,10 @@ function playOneShotAndWait(audio, volume = 0.9, maxWaitMs = 5000) {
       audio.removeEventListener('ended', finish);
       resolve();
     };
-
     audio.addEventListener('ended', finish, { once: true });
     timer = setTimeout(finish, maxWaitMs);
-
     const promise = audio.play();
-    if (promise && promise.catch) {
-      promise.catch(error => {
-        console.warn('Falha ao tocar efeito:', audio.src, error);
-        finish();
-      });
-    }
+    if (promise && promise.catch) promise.catch(finish);
   });
 }
 
@@ -205,7 +200,6 @@ function fadeAudio(audio, target, duration = 900) {
   if (!audio) return Promise.resolve();
   const start = performance.now();
   const from = audio.volume;
-
   return new Promise(resolve => {
     function tick(now) {
       const p = duration <= 0 ? 1 : Math.min(1, (now - start) / duration);
@@ -220,11 +214,7 @@ function fadeAudio(audio, target, duration = 900) {
 function unlockLoopAudios() {
   if (state.audioUnlocked) return;
   state.audioUnlocked = true;
-
-  startLoop(nightAudio, 0, true);
-  startLoop(kitchenAudio, 0, true);
-  startLoop(fliesAudio, 0, true);
-  startLoop(fridgeHumAudio, 0, true);
+  [nightAudio, kitchenAudio, fliesAudio, fridgeHumAudio].forEach(audio => startLoop(audio, 0, true));
 }
 
 function setScene(src, alt) {
@@ -244,7 +234,6 @@ function showSceneMessage(text, duration = 4200) {
   sceneMessage.textContent = text;
   sceneMessage.classList.remove('hidden');
   requestAnimationFrame(() => sceneMessage.classList.add('visible'));
-
   messageTimer = setTimeout(() => {
     sceneMessage.classList.remove('visible');
     messageFadeTimer = setTimeout(() => sceneMessage.classList.add('hidden'), 700);
@@ -252,20 +241,14 @@ function showSceneMessage(text, duration = 4200) {
 }
 
 function moveHintToPointer(event) {
-  const game = document.getElementById('game');
+  const game = $('game');
   if (!game || !interactionHint || !hintHotspot) return;
-
   const rect = game.getBoundingClientRect();
-  const offsetX = 12;
-  const offsetY = 16;
-  const x = Math.min(rect.width - 8, Math.max(8, event.clientX - rect.left + offsetX));
-  const y = Math.min(rect.height - 8, Math.max(8, event.clientY - rect.top - offsetY));
-
+  const x = Math.min(rect.width - 8, Math.max(8, event.clientX - rect.left + 14));
+  const y = Math.min(rect.height - 8, Math.max(8, event.clientY - rect.top + 14));
   interactionHint.style.left = `${x}px`;
   interactionHint.style.top = `${y}px`;
-  // Mantém a indicação sempre visível: se o ponteiro estiver perto do topo,
-  // o texto aparece abaixo dele em vez de ser cortado pela tela.
-  interactionHint.style.transform = y < 34 ? 'translate(0, 0)' : 'translate(0, -100%)';
+  interactionHint.style.transform = y < 35 ? 'translate(0, 0)' : 'translate(0, -100%)';
 }
 
 function setHint(show, text = 'Abrir', hotspot = null, event = null) {
@@ -273,16 +256,31 @@ function setHint(show, text = 'Abrir', hotspot = null, event = null) {
   interactionHint.textContent = text;
   interactionHint.classList.toggle('hidden', !show);
   interactionHint.classList.toggle('show', show);
-
   if (show && event) moveHintToPointer(event);
 }
 
 function hideAllHotspots() {
-  [doorHandle, fridgeHotspot, fridgeBackHotspot, bathroomDoorHotspot, freezerHotspot, bodyHotspot]
-    .forEach(h => h.classList.add('hidden'));
-  actionBar.classList.add('hidden');
-  backButton.classList.add('hidden');
+  [doorHandle, fridgeHotspot, freezerHotspot, bathroomDoorHotspot, bedroomDoorHotspot,
+   backHotspot, dresserHotspot, phoneHotspot, drawerHotspot, keyHotspot, bodyHotspot]
+    .forEach(h => h && h.classList.add('hidden'));
   setHint(false);
+}
+
+function applyBounds(hotspot, left, top, width, height) {
+  if (!hotspot) return;
+  hotspot.style.left = left;
+  hotspot.style.top = top;
+  hotspot.style.width = width;
+  hotspot.style.height = height;
+}
+
+function positionBackHotspot(context) {
+  // Área grande e invisível; a ação só aparece no cursor.
+  if (context === 'kitchen') {
+    applyBounds(backHotspot, '87%', '23%', '13%', '54%');
+  } else {
+    applyBounds(backHotspot, '0%', '15%', '18%', '70%');
+  }
 }
 
 function showEntryControls() {
@@ -292,41 +290,22 @@ function showEntryControls() {
 
 function showKitchenControls() {
   hideAllHotspots();
-  // Volta às coordenadas da geladeira na imagem normal da cozinha.
-  setFridgeHotspotBounds('kitchen');
+  positionBackHotspot('kitchen');
   fridgeHotspot.classList.remove('hidden');
   bathroomDoorHotspot.classList.remove('hidden');
-  backButton.classList.remove('hidden');
-}
-
-function applyBounds(hotspot, left, top, width, height) {
-  hotspot.style.left = left;
-  hotspot.style.top = top;
-  hotspot.style.width = width;
-  hotspot.style.height = height;
+  bedroomDoorHotspot.classList.remove('hidden');
+  backHotspot.classList.remove('hidden');
 }
 
 function setFridgeHotspotBounds(mode) {
-  // Cada foto tem uma posição diferente para a porta inferior.
-  if (mode === 'kitchen') {
-    applyBounds(fridgeHotspot, '74%', '50%', '24%', '36%');
-  } else if (mode === 'closed') {
-    // Geladeira fechada: somente a porta inferior.
-    applyBounds(fridgeHotspot, '54%', '47%', '34%', '43%');
-  } else if (mode === 'open') {
-    // Geladeira aberta: a porta que está projetada para a direita.
-    applyBounds(fridgeHotspot, '73%', '45%', '26%', '44%');
-  }
+  if (mode === 'kitchen') applyBounds(fridgeHotspot, '74%', '48%', '25%', '39%');
+  if (mode === 'closed') applyBounds(fridgeHotspot, '55%', '48%', '31%', '42%');
+  if (mode === 'open') applyBounds(fridgeHotspot, '74%', '45%', '24%', '44%');
 }
 
 function setFreezerHotspotBounds(mode) {
-  if (mode === 'closed') {
-    // Só a porta do freezer na foto fechada.
-    applyBounds(freezerHotspot, '54%', '28%', '34%', '20%');
-  } else if (mode === 'open') {
-    // Foto do freezer aberto: clique na própria porta para fechá-la.
-    applyBounds(freezerHotspot, '76%', '23%', '23%', '25%');
-  }
+  if (mode === 'closed') applyBounds(freezerHotspot, '55%', '28%', '31%', '20%');
+  if (mode === 'open') applyBounds(freezerHotspot, '76%', '24%', '23%', '24%');
 }
 
 function showFridgeClosedControls() {
@@ -335,53 +314,73 @@ function showFridgeClosedControls() {
   setFreezerHotspotBounds('closed');
   fridgeHotspot.classList.remove('hidden');
   freezerHotspot.classList.remove('hidden');
-  fridgeBackHotspot.classList.remove('hidden');
-  freezerHotspot.setAttribute('aria-label', 'Abrir o freezer');
-  actionBar.classList.add('hidden');
+  positionBackHotspot('fridge');
+  backHotspot.classList.remove('hidden');
 }
 
 function showFridgeOpenControls() {
   hideAllHotspots();
   setFridgeHotspotBounds('open');
-  // Com a porta inferior aberta, o freezer não pode ser clicado.
   fridgeHotspot.classList.remove('hidden');
-  fridgeBackHotspot.classList.remove('hidden');
-  actionBar.classList.add('hidden');
+  positionBackHotspot('fridge');
+  backHotspot.classList.remove('hidden');
 }
 
 function showFreezerControls() {
   hideAllHotspots();
   setFreezerHotspotBounds('open');
-  // Neste estado a porta inferior continua fechada e não é interativa.
   freezerHotspot.classList.remove('hidden');
-  fridgeBackHotspot.classList.remove('hidden');
-  actionBar.classList.add('hidden');
+  positionBackHotspot('fridge');
+  backHotspot.classList.remove('hidden');
 }
 
 function showBathroomControls() {
   hideAllHotspots();
   bodyHotspot.classList.remove('hidden');
-  actionBar.classList.remove('hidden');
-  actionClose.textContent = '← COZINHA';
-  actionKitchen.textContent = '';
-  actionKitchen.classList.add('empty-action');
+  positionBackHotspot('bathroom');
+  backHotspot.classList.remove('hidden');
 }
 
-function restoreKitchenActionButtons() {
-  actionKitchen.classList.remove('empty-action');
+function showBedroomControls() {
+  hideAllHotspots();
+  dresserHotspot.classList.remove('hidden');
+  positionBackHotspot('bedroom');
+  backHotspot.classList.remove('hidden');
+}
+
+function showDresserControls() {
+  hideAllHotspots();
+  phoneHotspot.classList.remove('hidden');
+  drawerHotspot.classList.remove('hidden');
+  positionBackHotspot('dresser');
+  backHotspot.classList.remove('hidden');
+}
+
+function showDrawerControls() {
+  hideAllHotspots();
+  keyHotspot.classList.remove('hidden');
+  drawerHotspot.classList.remove('hidden');
+  positionBackHotspot('dresser');
+  backHotspot.classList.remove('hidden');
+}
+
+function showDrawerNoKeyControls() {
+  hideAllHotspots();
+  phoneHotspot.classList.remove('hidden');
+  drawerHotspot.classList.remove('hidden');
+  positionBackHotspot('dresser');
+  backHotspot.classList.remove('hidden');
 }
 
 function prepareAudioEvents() {
-  [nightAudio, kitchenAudio, fliesAudio, fridgeHumAudio, handleAudio,
-   metalOpenAudio, woodOpenAudio, woodCloseAudio, fridgeOpenAudio,
-   fridgeCloseAudio, freezerOpenAudio, freezerCloseAudio]
-    .forEach(audio => {
-      if (!audio) return;
-      audio.preload = 'auto';
-      audio.addEventListener('error', () => {
-        console.warn('Arquivo de áudio não encontrado:', audio.currentSrc || audio.src);
-      });
-    });
+  [nightAudio, kitchenAudio, fliesAudio, fridgeHumAudio, handleAudio, metalOpenAudio,
+   woodOpenAudio, woodCloseAudio, fridgeOpenAudio, fridgeCloseAudio, freezerOpenAudio,
+   freezerCloseAudio, slowStepsAudio, mediumStepsAudio, fastStepsAudio, veryFastStepsAudio,
+   keyCollectedAudio, drawerOpenAudio, phoneCollectedAudio].forEach(audio => {
+    if (!audio) return;
+    audio.preload = 'auto';
+    audio.addEventListener('error', () => console.warn('Áudio não encontrado:', audio.currentSrc || audio.src));
+  });
 }
 
 async function typeText(text, speed = 42) {
@@ -399,24 +398,20 @@ async function typeText(text, speed = 42) {
 }
 
 async function enterKitchen() {
-  if (state.transitioning || state.scene !== 'entry') return;
+  if (state.transitioning || state.scene !== 'entry' || state.gameLocked) return;
   state.transitioning = true;
   hideAllHotspots();
   clearMessage();
-
-  // Maçaneta termina antes da porta metálica começar: sem sobreposição indesejada.
   await playOneShotAndWait(handleAudio, 0.86, 2200);
-  playOneShot(metalOpenAudio, 0.92);
+  await playOneShotAndWait(metalOpenAudio, 0.92, 5000);
 
   sceneOverlay.classList.add('fade-out');
-  await sleep(1550);
-
+  await sleep(500);
   setScene(images.kitchen, 'Uma cozinha escura');
   sceneOverlay.classList.remove('fade-out');
   sceneOverlay.classList.add('fade-in');
-
-  await fadeAudio(nightAudio, 0, 1200);
-  await fadeAudio(kitchenAudio, 0.42, 1200);
+  await fadeAudio(nightAudio, 0, 900);
+  await fadeAudio(kitchenAudio, 0.42, 900);
   await sleep(350);
   sceneOverlay.classList.remove('fade-in');
 
@@ -427,217 +422,444 @@ async function enterKitchen() {
 }
 
 async function returnToEntry() {
-  if (state.transitioning || state.scene !== 'kitchen') return;
+  if (state.transitioning || state.scene !== 'kitchen' || state.gameLocked) return;
   state.transitioning = true;
   hideAllHotspots();
   clearMessage();
   sceneOverlay.classList.add('fade-out');
-
-  await sleep(1500);
+  await sleep(900);
   setScene(images.first, 'Uma porta metálica escura');
   sceneOverlay.classList.remove('fade-out');
   sceneOverlay.classList.add('fade-in');
-
-  await fadeAudio(kitchenAudio, 0, 1000);
-  await fadeAudio(nightAudio, 0.03, 1000);
-  await sleep(350);
+  await fadeAudio(kitchenAudio, 0, 800);
+  await fadeAudio(nightAudio, 0.03, 800);
+  await sleep(300);
   sceneOverlay.classList.remove('fade-in');
-
   state.scene = 'entry';
   showEntryControls();
   state.transitioning = false;
 }
 
 async function approachFridge() {
-  if (state.transitioning || state.scene !== 'kitchen') return;
+  if (state.transitioning || state.scene !== 'kitchen' || state.gameLocked) return;
   state.transitioning = true;
   hideAllHotspots();
   clearMessage();
-
   setScene(images.fridgeClosed, 'Geladeira fechada');
   await sleep(180);
-
   state.scene = 'fridgeClosed';
   showFridgeClosedControls();
   state.transitioning = false;
 }
 
 async function openFridge() {
-  if (state.transitioning || state.scene !== 'fridgeClosed') return;
+  if (state.transitioning || state.scene !== 'fridgeClosed' || state.gameLocked) return;
   state.transitioning = true;
   hideAllHotspots();
-
-  playOneShot(fridgeOpenAudio, 0.9);
+  await playOneShot(fridgeOpenAudio, 0.9);
   setScene(images.fridgeOpen, 'Geladeira aberta');
-  await startLoop(fridgeHumAudio, 0.08, true);
-  await sleep(180);
-
+  startLoop(fridgeHumAudio, 0.08, true);
+  await sleep(220);
   state.scene = 'fridge';
   showFridgeOpenControls();
   state.transitioning = false;
 }
 
 async function closeFridge() {
-  if (state.transitioning || state.scene !== 'fridge') return;
+  if (state.transitioning || state.scene !== 'fridge' || state.gameLocked) return;
   state.transitioning = true;
   hideAllHotspots();
-
-  playOneShot(fridgeCloseAudio, 0.92);
-  await fadeAudio(fridgeHumAudio, 0, 420);
+  await playOneShot(fridgeCloseAudio, 0.92);
+  await fadeAudio(fridgeHumAudio, 0, 400);
   stopAudio(fridgeHumAudio, true);
   setScene(images.fridgeClosed, 'Geladeira fechada');
   await sleep(220);
-
   state.scene = 'fridgeClosed';
   showFridgeClosedControls();
   state.transitioning = false;
 }
 
 async function openFreezer() {
-  // O freezer só pode ser aberto com a porta inferior da geladeira fechada.
-  if (state.transitioning || state.scene !== 'fridgeClosed') return;
+  if (state.transitioning || state.scene !== 'fridgeClosed' || state.gameLocked) return;
   state.transitioning = true;
   hideAllHotspots();
-
-  playOneShot(freezerOpenAudio, 0.9);
+  await playOneShot(freezerOpenAudio, 0.9);
   setScene(images.freezerOpen, 'Freezer aberto');
-  await sleep(180);
-
+  await sleep(220);
   state.scene = 'freezer';
   showFreezerControls();
   state.transitioning = false;
 }
 
 async function closeFreezer() {
-  if (state.transitioning || state.scene !== 'freezer') return;
+  if (state.transitioning || state.scene !== 'freezer' || state.gameLocked) return;
   state.transitioning = true;
   hideAllHotspots();
-
-  playOneShot(freezerCloseAudio, 0.92);
+  await playOneShot(freezerCloseAudio, 0.92);
   setScene(images.fridgeClosed, 'Geladeira fechada');
-  await sleep(180);
-
+  await sleep(220);
   state.scene = 'fridgeClosed';
   showFridgeClosedControls();
   state.transitioning = false;
 }
 
 async function kitchenFromFridge() {
-  if (state.transitioning) return;
-
-  if (state.scene === 'fridgeClosed') {
-    state.transitioning = true;
-    hideAllHotspots();
-    setScene(images.kitchen, 'Uma cozinha escura');
-    await sleep(250);
-    state.scene = 'kitchen';
-    showKitchenControls();
-    state.transitioning = false;
-    return;
-  }
-
+  if (state.transitioning || state.gameLocked) return;
+  if (!['fridgeClosed', 'fridge', 'freezer'].includes(state.scene)) return;
+  state.transitioning = true;
+  hideAllHotspots();
   if (state.scene === 'fridge') {
-    state.transitioning = true;
-    hideAllHotspots();
-    playOneShot(fridgeCloseAudio, 0.9);
-    await fadeAudio(fridgeHumAudio, 0, 400);
+    playOneShot(fridgeCloseAudio, 0.86);
+    await fadeAudio(fridgeHumAudio, 0, 350);
     stopAudio(fridgeHumAudio, true);
-    setScene(images.kitchen, 'Uma cozinha escura');
-    state.scene = 'kitchen';
-    await sleep(500);
-    showKitchenControls();
-    state.transitioning = false;
-    return;
   }
-
-  if (state.scene === 'freezer') {
-    state.transitioning = true;
-    hideAllHotspots();
-    playOneShot(freezerCloseAudio, 0.9);
-    await sleep(140);
-    setScene(images.kitchen, 'Uma cozinha escura');
-    await fadeAudio(fridgeHumAudio, 0, 400);
-    stopAudio(fridgeHumAudio, true);
-    state.scene = 'kitchen';
-    await sleep(500);
-    showKitchenControls();
-    state.transitioning = false;
-  }
+  if (state.scene === 'freezer') playOneShot(freezerCloseAudio, 0.86);
+  setScene(images.kitchen, 'Uma cozinha escura');
+  await sleep(350);
+  state.scene = 'kitchen';
+  showKitchenControls();
+  state.transitioning = false;
 }
 
 async function enterBathroom() {
-  if (state.transitioning || state.scene !== 'kitchen') return;
+  if (state.transitioning || state.scene !== 'kitchen' || state.gameLocked) return;
   state.transitioning = true;
   hideAllHotspots();
   clearMessage();
-
-  // Também aqui a maçaneta acontece primeiro, depois a madeira.
   await playOneShotAndWait(handleAudio, 0.82, 2200);
   playOneShot(woodOpenAudio, 0.88);
-
   setScene(images.bathroomOpen, 'Porta do banheiro aberta');
-  sceneOverlay.classList.add('fade-in');
-  await sleep(250);
-  sceneOverlay.classList.remove('fade-in');
-
-  // A cena intermediária fica visível por alguns segundos sem prender o jogo.
-  await sleep(3000);
-  stopAudio(woodOpenAudio, false);
-
+  await sleep(2700);
   sceneOverlay.classList.add('fade-out');
-  await sleep(900);
+  await sleep(800);
   setScene(images.bathroom, 'Banheiro escuro');
   sceneOverlay.classList.remove('fade-out');
   sceneOverlay.classList.add('fade-in');
-
-  await fadeAudio(kitchenAudio, 0, 850);
-  await startLoop(fliesAudio, 0.14, true);
+  await fadeAudio(kitchenAudio, 0, 800);
+  startLoop(fliesAudio, 0.14, true);
   await sleep(350);
   sceneOverlay.classList.remove('fade-in');
-
   state.scene = 'bathroom';
   showBathroomControls();
   state.transitioning = false;
 }
 
 async function leaveBathroom() {
-  if (state.transitioning || state.scene !== 'bathroom') return;
+  if (state.transitioning || state.scene !== 'bathroom' || state.gameLocked) return;
   state.transitioning = true;
   hideAllHotspots();
   clearMessage();
-
   playOneShot(woodCloseAudio, 0.88);
   sceneOverlay.classList.add('fade-out');
   await sleep(850);
-
   setScene(images.kitchen, 'Uma cozinha escura');
-  sceneOverlay.classList.remove('fade-out');
-  sceneOverlay.classList.add('fade-in');
-
-  await fadeAudio(fliesAudio, 0, 700);
+  await fadeAudio(fliesAudio, 0, 650);
   stopAudio(fliesAudio, true);
-  await fadeAudio(kitchenAudio, 0.42, 950);
-  await sleep(350);
-  sceneOverlay.classList.remove('fade-in');
-
+  await fadeAudio(kitchenAudio, 0.42, 850);
+  sceneOverlay.classList.remove('fade-out');
+  await sleep(300);
   state.scene = 'kitchen';
-  restoreKitchenActionButtons();
   showKitchenControls();
   state.transitioning = false;
 }
 
-function examineBody() {
-  if (state.transitioning || state.scene !== 'bathroom') return;
-  // O jogador pode examinar novamente sempre que clicar.
-  showSceneMessage('O cheiro tá horrível.', 4500);
+async function enterBedroom() {
+  if (state.transitioning || state.scene !== 'kitchen' || state.gameLocked) return;
+  state.transitioning = true;
+  hideAllHotspots();
+  clearMessage();
+  await playOneShotAndWait(handleAudio, 0.8, 2200);
+  playOneShot(woodOpenAudio, 0.84);
+  sceneOverlay.classList.add('fade-out');
+  await sleep(650);
+  setScene(images.bedroom, 'Um quarto escuro');
+  sceneOverlay.classList.remove('fade-out');
+  sceneOverlay.classList.add('fade-in');
+  await fadeAudio(kitchenAudio, 0, 800);
+  await sleep(350);
+  sceneOverlay.classList.remove('fade-in');
+  state.scene = 'bedroom';
+  showBedroomControls();
+  state.transitioning = false;
 }
+
+async function leaveBedroom() {
+  if (state.transitioning || state.scene === 'kitchen' || state.gameLocked) return;
+  state.transitioning = true;
+  hideAllHotspots();
+  clearMessage();
+  playOneShot(woodCloseAudio, 0.76);
+  sceneOverlay.classList.add('fade-out');
+  await sleep(800);
+  setScene(images.kitchen, 'Uma cozinha escura');
+  sceneOverlay.classList.remove('fade-out');
+  sceneOverlay.classList.add('fade-in');
+  await fadeAudio(kitchenAudio, 0.42, 850);
+  await sleep(300);
+  sceneOverlay.classList.remove('fade-in');
+  state.scene = 'kitchen';
+  showKitchenControls();
+  state.transitioning = false;
+}
+
+async function openDresser() {
+  if (state.transitioning || state.scene !== 'bedroom' || state.gameLocked) return;
+  state.transitioning = true;
+  hideAllHotspots();
+  setScene(images.dresser, 'Uma cômoda com um celular');
+  await sleep(220);
+  state.scene = 'dresser';
+  showDresserControls();
+  state.transitioning = false;
+}
+
+async function closeDresser() {
+  if (state.transitioning || !['dresser', 'drawerOpen', 'drawerNoKey'].includes(state.scene) || state.gameLocked) return;
+  state.transitioning = true;
+  hideAllHotspots();
+  setScene(images.bedroom, 'Um quarto escuro');
+  await sleep(220);
+  state.scene = 'bedroom';
+  showBedroomControls();
+  state.transitioning = false;
+}
+
+async function openDrawer() {
+  if (state.transitioning || state.scene !== 'dresser' || state.gameLocked) return;
+  state.transitioning = true;
+  hideAllHotspots();
+  playOneShot(drawerOpenAudio, 0.82);
+  setScene(images.drawerOpen, 'Cômoda com a gaveta aberta');
+  await sleep(220);
+  state.scene = 'drawerOpen';
+  showDrawerControls();
+  state.transitioning = false;
+}
+
+async function collectKey() {
+  if (state.transitioning || state.scene !== 'drawerOpen' || state.gameLocked || state.hasKey) return;
+  state.transitioning = true;
+  hideAllHotspots();
+  state.hasKey = true;
+  playOneShot(keyCollectedAudio, 0.88);
+  setScene(images.drawerNoKey, 'Cômoda sem a chave');
+  await sleep(300);
+  state.scene = 'drawerNoKey';
+  showDrawerNoKeyControls();
+  state.transitioning = false;
+}
+
+function showDrawerNoKeyControls() {
+  hideAllHotspots();
+  // O telefone continua visível depois que a chave foi retirada,
+  // enquanto a gaveta continua aberta.
+  phoneHotspot.classList.remove('hidden');
+  drawerHotspot.classList.remove('hidden');
+  positionBackHotspot('dresser');
+  backHotspot.classList.remove('hidden');
+}
+
+async function collectPhone() {
+  if (state.transitioning || !['dresser', 'drawerNoKey'].includes(state.scene) || state.gameLocked || state.phoneTaken) return;
+  state.transitioning = true;
+  hideAllHotspots();
+  state.phoneTaken = true;
+  await playOneShotAndWait(phoneCollectedAudio, 0.92, 2200);
+  setScene(images.dresserNoPhone, 'A cômoda sem o celular');
+  await sleep(900);
+  await runFootstepSequence();
+  await sleep(650);
+  triggerJumpscareLock();
+}
+
+async function runFootstepSequence() {
+  const sequence = [
+    { audio: slowStepsAudio, volume: 0.12, wait: 5100 },
+    { audio: mediumStepsAudio, volume: 0.24, wait: 5100 },
+    { audio: fastStepsAudio, volume: 0.42, wait: 3100 },
+    { audio: veryFastStepsAudio, volume: 0.72, wait: 4100 }
+  ];
+
+  for (const step of sequence) {
+    if (state.gameLocked) return;
+    currentStepAudio = step.audio;
+    await playOneShotAndWait(step.audio, step.volume, step.wait + 500);
+    if (currentStepAudio === step.audio) currentStepAudio = null;
+    await sleep(120);
+  }
+}
+
+function stopAllGameAudio() {
+  [nightAudio, kitchenAudio, fliesAudio, fridgeHumAudio, handleAudio, metalOpenAudio,
+   woodOpenAudio, woodCloseAudio, fridgeOpenAudio, fridgeCloseAudio, freezerOpenAudio,
+   freezerCloseAudio, slowStepsAudio, mediumStepsAudio, fastStepsAudio, veryFastStepsAudio,
+   keyCollectedAudio, drawerOpenAudio, phoneCollectedAudio].forEach(a => stopAudio(a, true));
+  currentStepAudio = null;
+}
+
+function playProceduralJumpscareAndStuck() {
+  if (!typewriterContext) initTypewriterAudio();
+  if (!typewriterContext) return;
+  const ctx = typewriterContext;
+  if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+  const now = ctx.currentTime;
+
+  // Ataque curto e seco para o impacto da imagem.
+  const impactOsc = ctx.createOscillator();
+  const impactGain = ctx.createGain();
+  const impactFilter = ctx.createBiquadFilter();
+  impactOsc.type = 'sawtooth';
+  impactOsc.frequency.setValueAtTime(170, now);
+  impactOsc.frequency.exponentialRampToValueAtTime(62, now + 0.14);
+  impactFilter.type = 'lowpass';
+  impactFilter.frequency.setValueAtTime(1800, now);
+  impactGain.gain.setValueAtTime(0.0001, now);
+  impactGain.gain.exponentialRampToValueAtTime(0.34, now + 0.006);
+  impactGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.18);
+  impactOsc.connect(impactFilter);
+  impactFilter.connect(impactGain);
+  impactGain.connect(ctx.destination);
+  impactOsc.start(now);
+  impactOsc.stop(now + 0.2);
+
+  // Pequeno trecho "travado": um buffer curtíssimo em loop.
+  const bufferSeconds = 0.075;
+  const buffer = ctx.createBuffer(1, Math.floor(ctx.sampleRate * bufferSeconds), ctx.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < data.length; i++) {
+    const t = i / ctx.sampleRate;
+    const buzz = Math.sin(2 * Math.PI * 115 * t) * 0.35;
+    const harmonic = Math.sin(2 * Math.PI * 230 * t) * 0.12;
+    const noise = (Math.random() * 2 - 1) * 0.05;
+    data[i] = buzz + harmonic + noise;
+  }
+  const source = ctx.createBufferSource();
+  const gain = ctx.createGain();
+  const filter = ctx.createBiquadFilter();
+  source.buffer = buffer;
+  source.loop = true;
+  filter.type = 'lowpass';
+  filter.frequency.value = 1300;
+  gain.gain.setValueAtTime(0.0001, now + 0.16);
+  gain.gain.exponentialRampToValueAtTime(0.16, now + 0.19);
+  gain.gain.setValueAtTime(0.16, now + 1.18);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + 1.55);
+  source.connect(filter);
+  filter.connect(gain);
+  gain.connect(ctx.destination);
+  source.start(now + 0.16);
+  source.stop(now + 1.6);
+}
+
+function triggerJumpscareLock() {
+  if (state.gameLocked) return;
+  state.gameLocked = true;
+  state.transitioning = false;
+  hideAllHotspots();
+  clearMessage();
+  stopAllGameAudio();
+  setScene(images.jumpscare, '');
+  scene.classList.add('game-locked');
+  sceneOverlay.classList.remove('fade-in', 'fade-out');
+  sceneOverlay.classList.add('jumpscare-flash');
+  setTimeout(() => {
+    sceneOverlay.classList.remove('jumpscare-flash');
+    sceneOverlay.classList.add('locked-overlay');
+  }, 180);
+  playProceduralJumpscareAndStuck();
+}
+
+function handleBack() {
+  if (state.gameLocked || state.transitioning) return;
+  switch (state.scene) {
+    case 'kitchen': returnToEntry(); break;
+    case 'fridgeClosed': case 'fridge': case 'freezer': kitchenFromFridge(); break;
+    case 'bathroom': leaveBathroom(); break;
+    case 'bedroom': leaveBedroom(); break;
+    case 'dresser': case 'drawerOpen': case 'drawerNoKey': closeDresser(); break;
+  }
+}
+
+function closeDrawer() {
+  if (state.transitioning || !['drawerOpen', 'drawerNoKey'].includes(state.scene) || state.gameLocked) return;
+  state.transitioning = true;
+  hideAllHotspots();
+  setScene(images.dresser, 'Uma cômoda com um celular');
+  setTimeout(() => {}, 0);
+  state.scene = 'dresser';
+  showDresserControls();
+  state.transitioning = false;
+}
+
+function routeDrawerAction() {
+  if (state.scene === 'dresser') openDrawer();
+  else if (state.scene === 'drawerOpen') closeDrawer();
+  else if (state.scene === 'drawerNoKey') closeDrawer();
+}
+
+function routeHotspotInteraction(hotspot) {
+  if (state.gameLocked) return;
+  if (hotspot === bedroomDoorHotspot && state.scene === 'kitchen') enterBedroom();
+  else if (hotspot === bathroomDoorHotspot && state.scene === 'kitchen') enterBathroom();
+  else if (hotspot === fridgeHotspot) {
+    if (state.scene === 'kitchen') approachFridge();
+    else if (state.scene === 'fridgeClosed') openFridge();
+    else if (state.scene === 'fridge') closeFridge();
+  } else if (hotspot === freezerHotspot) {
+    if (state.scene === 'fridgeClosed') openFreezer();
+    else if (state.scene === 'freezer') closeFreezer();
+  } else if (hotspot === dresserHotspot && state.scene === 'bedroom') openDresser();
+  else if (hotspot === phoneHotspot && state.scene === 'dresser') collectPhone();
+  else if (hotspot === drawerHotspot && ['dresser','drawerOpen','drawerNoKey'].includes(state.scene)) routeDrawerAction();
+  else if (hotspot === keyHotspot && state.scene === 'drawerOpen') collectKey();
+  else if (hotspot === bodyHotspot && state.scene === 'bathroom') showSceneMessage('O cheiro tá horrível.', 4500);
+  else if (hotspot === backHotspot) handleBack();
+  else if (hotspot === doorHandle && state.scene === 'entry') enterKitchen();
+}
+
+function bindHoverHint(hotspot, textOrGetter) {
+  if (!hotspot) return;
+  const getText = () => typeof textOrGetter === 'function' ? textOrGetter() : textOrGetter;
+  hotspot.addEventListener('pointerenter', event => setHint(true, getText(), hotspot, event));
+  hotspot.addEventListener('pointermove', event => { if (hintHotspot === hotspot) moveHintToPointer(event); });
+  hotspot.addEventListener('pointerleave', () => { if (hintHotspot === hotspot) setHint(false); });
+  hotspot.addEventListener('focus', () => setHint(true, getText(), hotspot));
+  hotspot.addEventListener('blur', () => { if (hintHotspot === hotspot) setHint(false); });
+  hotspot.addEventListener('click', () => routeHotspotInteraction(hotspot));
+}
+
+startButton.addEventListener('click', playIntro);
+
+bindHoverHint(doorHandle, 'Abrir');
+bindHoverHint(fridgeHotspot, () => {
+  if (state.scene === 'fridge') return 'Fechar';
+  if (state.scene === 'fridgeClosed') return 'Abrir';
+  return 'Aproximar';
+});
+bindHoverHint(freezerHotspot, () => state.scene === 'freezer' ? 'Fechar' : 'Abrir');
+bindHoverHint(bathroomDoorHotspot, 'Entrar');
+bindHoverHint(bedroomDoorHotspot, 'Entrar');
+bindHoverHint(backHotspot, 'Voltar');
+bindHoverHint(dresserHotspot, 'Examinar');
+bindHoverHint(phoneHotspot, 'Pegar');
+bindHoverHint(drawerHotspot, () => state.scene === 'drawerNoKey' ? 'Fechar' : 'Abrir');
+bindHoverHint(keyHotspot, 'Pegar');
+bindHoverHint(bodyHotspot, 'Examinar');
+
+// Garante áudio contínuo após a primeira interação, caso algum navegador tenha bloqueado o play inicial.
+document.addEventListener('pointerdown', () => {
+  if (!state.started || state.gameLocked || !state.audioUnlocked) return;
+  if (state.scene === 'entry' && nightAudio.paused) startLoop(nightAudio, 0.03);
+  if ((state.scene === 'kitchen' || state.scene === 'fridgeClosed') && kitchenAudio.paused) startLoop(kitchenAudio, 0.42);
+  if (state.scene === 'bathroom' && fliesAudio.paused) startLoop(fliesAudio, 0.14);
+  if (state.scene === 'fridge' && fridgeHumAudio.paused) startLoop(fridgeHumAudio, 0.08);
+}, { passive: true });
 
 async function playIntro() {
   if (state.started) return;
   state.started = true;
   startButton.disabled = true;
   startButton.style.display = 'none';
-
   unlockLoopAudios();
   initTypewriterAudio();
   prepareAudioEvents();
@@ -652,83 +874,13 @@ async function playIntro() {
   await sleep(500);
   scene.classList.remove('hidden');
   showEntryControls();
-
   await fadeAudio(nightAudio, 0.03, 1300);
   await sleep(250);
   scene.classList.add('visible');
-
   await sleep(900);
   intro.style.opacity = '0';
   await sleep(1600);
   intro.classList.add('hidden');
 }
-
-function bindHoverHint(hotspot, textOrGetter) {
-  const getText = () => typeof textOrGetter === 'function' ? textOrGetter() : textOrGetter;
-
-  hotspot.addEventListener('pointerenter', event => setHint(true, getText(), hotspot, event));
-  hotspot.addEventListener('pointermove', event => {
-    if (hintHotspot === hotspot) moveHintToPointer(event);
-  });
-  hotspot.addEventListener('pointerleave', () => {
-    if (hintHotspot === hotspot) setHint(false);
-  });
-  hotspot.addEventListener('focus', () => setHint(true, getText(), hotspot));
-  hotspot.addEventListener('blur', () => {
-    if (hintHotspot === hotspot) setHint(false);
-  });
-}
-
-startButton.addEventListener('click', playIntro);
-
-bindHoverHint(doorHandle, 'Abrir');
-doorHandle.addEventListener('click', enterKitchen);
-
-bindHoverHint(fridgeHotspot, () => state.scene === 'fridge' ? 'Fechar' : 'Abrir');
-fridgeHotspot.addEventListener('click', () => {
-  if (state.scene === 'kitchen') approachFridge();
-  else if (state.scene === 'fridgeClosed') openFridge();
-  else if (state.scene === 'fridge') closeFridge();
-});
-
-bindHoverHint(fridgeBackHotspot, 'Voltar');
-fridgeBackHotspot.addEventListener('click', kitchenFromFridge);
-
-bindHoverHint(freezerHotspot, () => state.scene === 'freezer' ? 'Fechar' : 'Abrir');
-freezerHotspot.addEventListener('click', () => {
-  if (state.scene === 'fridgeClosed') openFreezer();
-  else if (state.scene === 'freezer') closeFreezer();
-});
-
-bindHoverHint(bathroomDoorHotspot, 'Entrar');
-bathroomDoorHotspot.addEventListener('click', enterBathroom);
-
-bindHoverHint(bodyHotspot, 'Examinar');
-bodyHotspot.addEventListener('click', examineBody);
-
-backButton.addEventListener('click', () => {
-  if (state.scene === 'kitchen') returnToEntry();
-});
-
-actionClose.addEventListener('click', () => {
-  if (state.scene === 'bathroom') leaveBathroom();
-});
-
-actionKitchen.addEventListener('click', () => {
-  if (state.scene === 'bathroom') leaveBathroom();
-});
-
-document.addEventListener('pointerdown', () => {
-  if (!state.started || !state.audioUnlocked) return;
-
-  if (state.scene === 'entry' && nightAudio.paused) startLoop(nightAudio, 0.03);
-  if ((state.scene === 'kitchen' || state.scene === 'fridgeClosed') && kitchenAudio.paused) {
-    startLoop(kitchenAudio, 0.42);
-  }
-  if (state.scene === 'bathroom' && fliesAudio.paused) startLoop(fliesAudio, 0.14);
-  if (state.scene === 'fridge' && fridgeHumAudio.paused) {
-    startLoop(fridgeHumAudio, 0.08);
-  }
-});
 
 prepareAudioEvents();
