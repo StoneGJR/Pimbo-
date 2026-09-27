@@ -5,6 +5,7 @@ const introText = $('intro-text');
 const startButton = $('start-button');
 const scene = $('scene');
 const sceneImage = $('scene-image');
+const sceneImageNext = $('scene-image-next');
 const sceneOverlay = $('scene-overlay');
 const interactionHint = $('interaction-hint');
 const sceneMessage = $('scene-message');
@@ -92,17 +93,29 @@ function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-function waitForImage(src) {
-  return new Promise(resolve => {
-    const img = new Image();
-    img.onload = resolve;
-    img.onerror = resolve;
+const decodedImages = new Map();
+
+async function waitForImage(src) {
+  if (decodedImages.has(src)) return decodedImages.get(src);
+
+  const img = new Image();
+  img.decoding = 'async';
+  const promise = new Promise(resolve => {
+    img.onload = async () => {
+      try {
+        if (img.decode) await img.decode();
+      } catch (_) {}
+      resolve(img);
+    };
+    img.onerror = () => resolve(null);
     img.src = src;
   });
+  decodedImages.set(src, promise);
+  return promise;
 }
 
-function preloadImages() {
-  return Promise.all(Object.values(images).map(waitForImage));
+async function preloadImages() {
+  await Promise.all(Object.values(images).map(waitForImage));
 }
 
 function initTypewriterAudio() {
@@ -221,41 +234,63 @@ function unlockLoopAudios() {
 function setScene(src, alt) {
   sceneImage.src = src;
   sceneImage.alt = alt;
+  if (sceneImageNext) sceneImageNext.alt = '';
 }
 
-// Transição robusta: primeiro cobre COMPLETAMENTE a cena atual,
-// troca a imagem enquanto a tela está preta e só então revela a nova cena.
-// Isso evita o flash da imagem anterior entre dois estados.
-async function transitionScene(src, alt, fadeMs = 1050) {
-  if (!sceneOverlay) {
+async function transitionScene(src, alt, fadeMs = 950) {
+  // A troca é feita entre duas imagens pré-carregadas. A camada preta fecha
+  // completamente a cena atual; a nova imagem só aparece depois de estar
+  // pronta, eliminando o flash da cena anterior.
+  if (!sceneOverlay || !sceneImageNext) {
+    await waitForImage(src);
     setScene(src, alt);
     return;
   }
 
-  sceneOverlay.classList.remove('fade-in', 'locked-overlay');
-  sceneOverlay.style.transition = 'none';
-  sceneOverlay.style.opacity = '1';
+  state.transitioning = true;
+  hideAllHotspots();
 
-  // Deixa o navegador pintar a camada preta antes de trocar a imagem.
-  await new Promise(requestAnimationFrame);
-  await new Promise(requestAnimationFrame);
+  // Garante que a próxima imagem já está decodificada antes de começar.
+  await waitForImage(src);
 
-  setScene(src, alt);
+  // Prepara a próxima camada invisível sem mexer na que está na tela.
+  sceneImageNext.src = src;
+  sceneImageNext.alt = '';
+  sceneImageNext.style.transition = 'none';
+  sceneImageNext.style.opacity = '0';
 
-  // Garante que a imagem nova foi colocada antes de começar a revelação.
-  await new Promise(requestAnimationFrame);
-
-  sceneOverlay.classList.remove('fade-out');
+  // Cobre a cena atual com preto.
   sceneOverlay.style.transition = `opacity ${fadeMs}ms ease-in-out`;
+  sceneOverlay.style.opacity = '1';
+  await sleep(fadeMs + 30);
 
-  await new Promise(resolve => {
-    requestAnimationFrame(() => {
-      sceneOverlay.style.opacity = '0';
-      setTimeout(resolve, fadeMs + 40);
-    });
-  });
+  // Só agora a nova imagem passa a ser a camada visível.
+  sceneImageNext.style.opacity = '1';
+  sceneImage.style.opacity = '0';
+  sceneImage.alt = '';
 
+  // Mantém preto por alguns frames para o navegador estabilizar a troca.
+  await new Promise(requestAnimationFrame);
+  await new Promise(requestAnimationFrame);
+
+  // Transforma a camada nova em "principal" e prepara a antiga para a próxima vez.
+  const oldSrc = sceneImage.src;
+  sceneImage.src = src;
+  sceneImage.alt = alt;
+  sceneImage.style.transition = 'none';
+  sceneImage.style.opacity = '1';
+  sceneImageNext.style.opacity = '0';
+  sceneImageNext.style.transition = 'none';
+  sceneImageNext.src = oldSrc;
+
+  // Revela a nova cena com o fade-in do preto.
+  sceneOverlay.style.transition = `opacity ${fadeMs}ms ease-in-out`;
+  await new Promise(requestAnimationFrame);
+  sceneOverlay.style.opacity = '0';
+  await sleep(fadeMs + 30);
   sceneOverlay.style.transition = '';
+  sceneImage.style.transition = '';
+  sceneImageNext.style.transition = '';
 }
 
 function clearMessage() {
@@ -311,13 +346,13 @@ function applyBounds(hotspot, left, top, width, height) {
 }
 
 function positionBackHotspot(context) {
-  // Área grande e invisível; a ação só aparece no cursor.
-  // Na cozinha, o retorno fica no canto inferior esquerdo para não
-  // sobrepor a área da geladeira no lado direito.
+  // O retorno fica em uma faixa pequena e exclusiva no canto inferior esquerdo
+  // da cozinha. Nunca usamos uma área vertical enorme que possa capturar o
+  // mouse por cima de outros objetos.
   if (context === 'kitchen') {
-    applyBounds(backHotspot, '2%', '80%', '18%', '18%');
+    applyBounds(backHotspot, '1%', '88%', '18%', '11%');
   } else {
-    applyBounds(backHotspot, '0%', '15%', '18%', '70%');
+    applyBounds(backHotspot, '1%', '18%', '12%', '64%');
   }
 }
 
@@ -861,13 +896,71 @@ function routeHotspotInteraction(hotspot) {
 function bindHoverHint(hotspot, textOrGetter) {
   if (!hotspot) return;
   const getText = () => typeof textOrGetter === 'function' ? textOrGetter() : textOrGetter;
-  hotspot.addEventListener('pointerenter', event => setHint(true, getText(), hotspot, event));
-  hotspot.addEventListener('pointermove', event => { if (hintHotspot === hotspot) moveHintToPointer(event); });
-  hotspot.addEventListener('pointerleave', () => { if (hintHotspot === hotspot) setHint(false); });
+  // O clique continua preso ao próprio hotspot.
+  hotspot.addEventListener('click', () => routeHotspotInteraction(hotspot));
+  // Para teclado/acessibilidade, o foco ainda pode mostrar a dica.
   hotspot.addEventListener('focus', () => setHint(true, getText(), hotspot));
   hotspot.addEventListener('blur', () => { if (hintHotspot === hotspot) setHint(false); });
-  hotspot.addEventListener('click', () => routeHotspotInteraction(hotspot));
 }
+
+const boundHotspots = [
+  doorHandle, fridgeHotspot, freezerHotspot, bathroomDoorHotspot, bedroomDoorHotspot,
+  backHotspot, dresserHotspot, phoneHotspot, drawerHotspot, keyHotspot, bodyHotspot
+].filter(Boolean);
+
+function pointInsideElement(element, clientX, clientY) {
+  if (!element || element.classList.contains('hidden')) return false;
+  const rect = element.getBoundingClientRect();
+  return clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom;
+}
+
+function getPointerHotspot(event) {
+  const elements = document.elementsFromPoint(event.clientX, event.clientY);
+  for (const element of elements) {
+    if (!boundHotspots.includes(element)) continue;
+    if (element.classList.contains('hidden')) continue;
+
+    // Regra explícita: a área de Voltar da cozinha jamais pode competir com
+    // a geladeira. Mesmo que algum CSS futuro cause sobreposição, a geladeira ganha.
+    if (element === backHotspot && pointInsideElement(fridgeHotspot, event.clientX, event.clientY)) {
+      continue;
+    }
+    return element;
+  }
+  return null;
+}
+
+function hintTextForHotspot(hotspot) {
+  if (hotspot === fridgeHotspot) {
+    if (state.scene === 'fridge') return 'Fechar';
+    if (state.scene === 'fridgeClosed') return 'Abrir';
+    return 'Aproximar';
+  }
+  if (hotspot === freezerHotspot) return state.scene === 'freezer' ? 'Fechar' : 'Abrir';
+  if (hotspot === bathroomDoorHotspot || hotspot === bedroomDoorHotspot) return 'Entrar';
+  if (hotspot === backHotspot) return 'Voltar';
+  if (hotspot === dresserHotspot) return 'Examinar';
+  if (hotspot === phoneHotspot || hotspot === keyHotspot) return 'Pegar';
+  if (hotspot === drawerHotspot) return state.scene === 'drawerNoKey' ? 'Fechar' : 'Abrir';
+  if (hotspot === bodyHotspot) return 'Examinar';
+  if (hotspot === doorHandle) return 'Abrir';
+  return 'Interagir';
+}
+
+scene.addEventListener('pointermove', event => {
+  if (state.gameLocked || scene.classList.contains('hidden')) {
+    setHint(false);
+    return;
+  }
+  const hotspot = getPointerHotspot(event);
+  if (!hotspot) {
+    setHint(false);
+    return;
+  }
+  setHint(true, hintTextForHotspot(hotspot), hotspot, event);
+});
+
+scene.addEventListener('pointerleave', () => setHint(false));
 
 startButton.addEventListener('click', playIntro);
 
@@ -904,7 +997,7 @@ async function playIntro() {
   unlockLoopAudios();
   initTypewriterAudio();
   prepareAudioEvents();
-  preloadImages();
+  await preloadImages();
 
   for (let i = 0; i < story.length; i++) {
     await typeText(story[i].text);
