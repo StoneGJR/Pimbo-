@@ -263,7 +263,9 @@ function moveHintToPointer(event) {
 
   interactionHint.style.left = `${x}px`;
   interactionHint.style.top = `${y}px`;
-  interactionHint.style.transform = 'translate(0, -100%)';
+  // Mantém a indicação sempre visível: se o ponteiro estiver perto do topo,
+  // o texto aparece abaixo dele em vez de ser cortado pela tela.
+  interactionHint.style.transform = y < 34 ? 'translate(0, 0)' : 'translate(0, -100%)';
 }
 
 function setHint(show, text = 'Abrir', hotspot = null, event = null) {
