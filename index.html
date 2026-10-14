@@ -25,12 +25,23 @@
       <button id="back-hotspot" class="hotspot hotspot-back hidden" type="button" aria-label="Voltar"></button>
 
       <button id="dresser-hotspot" class="hotspot hotspot-dresser hidden" type="button" aria-label="Examinar a cômoda"></button>
+      <button id="bed-hotspot" class="hotspot hotspot-bed hidden" type="button" aria-label="Examinar a cama"></button>
+      <button id="window-hotspot" class="hotspot hotspot-window hidden" type="button" aria-label="Examinar a janela"></button>
+      <button id="wall-hotspot" class="hotspot hotspot-wall hidden" type="button" aria-label="Examinar a parede danificada"></button>
       <button id="phone-hotspot" class="hotspot hotspot-phone hidden" type="button" aria-label="Pegar o celular"></button>
       <button id="drawer-hotspot" class="hotspot hotspot-drawer hidden" type="button" aria-label="Abrir a gaveta"></button>
       <button id="key-hotspot" class="hotspot hotspot-key hidden" type="button" aria-label="Pegar a chave"></button>
       <button id="body-hotspot" class="hotspot hotspot-body hidden" type="button" aria-label="Examinar o corpo"></button>
 
       <div id="interaction-hint" class="interaction-hint hidden">Abrir</div>
+      <aside id="inventory" class="inventory hidden" aria-label="Inventário" aria-live="polite" title="Item guardado: chave">
+        <svg class="inventory-key-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="7.5" cy="8" r="4.1"></circle>
+          <path d="M10.5 10.8 21 21m-4-4 2.2-2.2m-5.4-.2 2.2-2.2"></path>
+        </svg>
+        <span>CHAVE</span>
+        <span class="inventory-count">×1</span>
+      </aside>
       <div id="scene-message" class="scene-message hidden"></div>
       <div id="scene-overlay" aria-hidden="true"></div>
     </section>
