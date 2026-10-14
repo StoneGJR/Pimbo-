@@ -17,6 +17,10 @@ const bathroomDoorHotspot = $('bathroom-door-hotspot');
 const bedroomDoorHotspot = $('bedroom-door-hotspot');
 const backHotspot = $('back-hotspot');
 const dresserHotspot = $('dresser-hotspot');
+const bedHotspot = $('bed-hotspot');
+const windowHotspot = $('window-hotspot');
+const wallHotspot = $('wall-hotspot');
+const inventoryPanel = $('inventory');
 const phoneHotspot = $('phone-hotspot');
 const drawerHotspot = $('drawer-hotspot');
 const keyHotspot = $('key-hotspot');
@@ -349,7 +353,8 @@ function setHint(show, text = 'Abrir', hotspot = null, event = null) {
 
 function hideAllHotspots() {
   [doorHandle, fridgeHotspot, freezerHotspot, bathroomDoorHotspot, bedroomDoorHotspot,
-   backHotspot, dresserHotspot, phoneHotspot, drawerHotspot, keyHotspot, bodyHotspot]
+   backHotspot, dresserHotspot, bedHotspot, windowHotspot, wallHotspot,
+   phoneHotspot, drawerHotspot, keyHotspot, bodyHotspot]
     .forEach(h => h && h.classList.add('hidden'));
   setHint(false);
 }
@@ -363,14 +368,18 @@ function applyBounds(hotspot, left, top, width, height) {
 }
 
 function positionBackHotspot(context) {
-  // O retorno fica em uma faixa pequena e exclusiva no canto inferior esquerdo
-  // da cozinha. Nunca usamos uma área vertical enorme que possa capturar o
-  // mouse por cima de outros objetos.
-  if (context === 'kitchen') {
-    applyBounds(backHotspot, '1%', '88%', '18%', '11%');
-  } else {
-    applyBounds(backHotspot, '1%', '84%', '19%', '14%');
-  }
+  // Área de retorno mais ampla e posicionada longe do objeto principal.
+  // Cozinha/geladeira: canto inferior esquerdo, longe da geladeira.
+  // Banheiro/quarto/cômoda: canto inferior direito, longe do corpo e da gaveta.
+  const bounds = {
+    kitchen:  ['1.5%', '87%', '19%', '12%'],
+    fridge:   ['1.5%', '87%', '19%', '12%'],
+    bathroom: ['80%', '87%', '18.5%', '12%'],
+    bedroom:  ['80%', '87%', '18.5%', '12%'],
+    dresser:  ['81.5%', '87.5%', '17%', '11.5%']
+  };
+  const b = bounds[context] || bounds.dresser;
+  applyBounds(backHotspot, b[0], b[1], b[2], b[3]);
 }
 
 function showEntryControls() {
@@ -433,20 +442,34 @@ function showBathroomControls() {
 
 function showBedroomControls() {
   hideAllHotspots();
+  // Hotspots separados e justos para a cômoda, a cama, a janela e a parede.
+  // Mantêm a exploração na própria cena, sem exigir novas imagens.
+  applyBounds(dresserHotspot, '41.5%', '48%', '22%', '15%');
+  applyBounds(windowHotspot, '12%', '28%', '27%', '21%');
+  applyBounds(wallHotspot, '41%', '27%', '25%', '19%');
+  applyBounds(bedHotspot, '13%', '52%', '27%', '21%');
   dresserHotspot.classList.remove('hidden');
+  bedHotspot.classList.remove('hidden');
+  windowHotspot.classList.remove('hidden');
+  wallHotspot.classList.remove('hidden');
   positionBackHotspot('bedroom');
   backHotspot.classList.remove('hidden');
 }
 
 function showDresserControls() {
   hideAllHotspots();
-  phoneHotspot.classList.remove('hidden');
+  if (!state.phoneTaken) phoneHotspot.classList.remove('hidden');
   drawerHotspot.classList.remove('hidden');
   positionBackHotspot('dresser');
   backHotspot.classList.remove('hidden');
 }
 
 function showDrawerControls() {
+  // Se a chave já foi guardada, ela nunca reaparece na gaveta ao reabri-la.
+  if (state.hasKey) {
+    showDrawerNoKeyControls();
+    return;
+  }
   hideAllHotspots();
   keyHotspot.classList.remove('hidden');
   drawerHotspot.classList.remove('hidden');
@@ -460,6 +483,38 @@ function showDrawerNoKeyControls() {
   drawerHotspot.classList.remove('hidden');
   positionBackHotspot('dresser');
   backHotspot.classList.remove('hidden');
+}
+
+const SAVE_KEY = 'ap202-progress-v1';
+
+function loadProgress() {
+  try {
+    const raw = window.localStorage.getItem(SAVE_KEY);
+    if (!raw) return;
+    const saved = JSON.parse(raw);
+    state.hasKey = saved && saved.hasKey === true;
+  } catch (error) {
+    // Se o navegador bloquear armazenamento, o jogo ainda funciona na sessão.
+    state.hasKey = false;
+    console.warn('Não foi possível carregar o progresso salvo.', error);
+  }
+}
+
+function saveProgress() {
+  try {
+    window.localStorage.setItem(SAVE_KEY, JSON.stringify({
+      version: 1,
+      hasKey: Boolean(state.hasKey)
+    }));
+  } catch (error) {
+    console.warn('Não foi possível salvar o inventário.', error);
+  }
+}
+
+function renderInventory() {
+  if (!inventoryPanel) return;
+  inventoryPanel.classList.toggle('hidden', !state.hasKey);
+  inventoryPanel.setAttribute('aria-label', state.hasKey ? 'Inventário: chave' : 'Inventário vazio');
 }
 
 function prepareAudioEvents() {
@@ -704,9 +759,15 @@ async function openDrawer() {
   state.transitioning = true;
   hideAllHotspots();
   playOneShot(drawerOpenAudio, 0.82);
-  await changeInteractionImage(images.drawerOpen, 'Cômoda com a gaveta aberta');
-  state.scene = 'drawerOpen';
-  showDrawerControls();
+  if (state.hasKey) {
+    await changeInteractionImage(images.drawerNoKey, 'Cômoda com a gaveta aberta, sem a chave');
+    state.scene = 'drawerNoKey';
+    showDrawerNoKeyControls();
+  } else {
+    await changeInteractionImage(images.drawerOpen, 'Cômoda com a gaveta aberta');
+    state.scene = 'drawerOpen';
+    showDrawerControls();
+  }
   state.transitioning = false;
 }
 
@@ -715,18 +776,20 @@ async function collectKey() {
   state.transitioning = true;
   hideAllHotspots();
   state.hasKey = true;
+  saveProgress();
+  renderInventory();
   playOneShot(keyCollectedAudio, 0.88);
   await changeInteractionImage(images.drawerNoKey, 'Cômoda sem a chave');
   state.scene = 'drawerNoKey';
   showDrawerNoKeyControls();
+  showSceneMessage('Chave guardada.', 2600);
   state.transitioning = false;
 }
 
 function showDrawerNoKeyControls() {
   hideAllHotspots();
-  // O telefone continua visível depois que a chave foi retirada,
-  // enquanto a gaveta continua aberta.
-  phoneHotspot.classList.remove('hidden');
+  // O telefone continua disponível enquanto não foi recolhido.
+  if (!state.phoneTaken) phoneHotspot.classList.remove('hidden');
   drawerHotspot.classList.remove('hidden');
   positionBackHotspot('dresser');
   backHotspot.classList.remove('hidden');
@@ -870,7 +933,8 @@ function handleBack() {
     case 'fridgeClosed': case 'fridge': case 'freezer': kitchenFromFridge(); break;
     case 'bathroom': leaveBathroom(); break;
     case 'bedroom': leaveBedroom(); break;
-    case 'dresser': case 'drawerOpen': case 'drawerNoKey': closeDresser(); break;
+    case 'dresser': closeDresser(); break;
+    case 'drawerOpen': case 'drawerNoKey': closeDrawer(); break;
   }
 }
 
@@ -878,7 +942,8 @@ async function closeDrawer() {
   if (state.transitioning || !['drawerOpen', 'drawerNoKey'].includes(state.scene) || state.gameLocked) return;
   state.transitioning = true;
   hideAllHotspots();
-  await changeInteractionImage(images.dresser, 'Uma cômoda com um celular');
+  const returnImage = state.phoneTaken ? images.dresserNoPhone : images.dresser;
+  await changeInteractionImage(returnImage, state.phoneTaken ? 'Uma cômoda sem o celular' : 'Uma cômoda com um celular');
   state.scene = 'dresser';
   showDresserControls();
   state.transitioning = false;
@@ -902,7 +967,10 @@ function routeHotspotInteraction(hotspot) {
     if (state.scene === 'fridgeClosed') openFreezer();
     else if (state.scene === 'freezer') closeFreezer();
   } else if (hotspot === dresserHotspot && state.scene === 'bedroom') openDresser();
-  else if (hotspot === phoneHotspot && state.scene === 'dresser') collectPhone();
+  else if (hotspot === bedHotspot && state.scene === 'bedroom') showSceneMessage('O colchão está frio. Você prefere não descobrir o motivo.', 4200);
+  else if (hotspot === windowHotspot && state.scene === 'bedroom') showSceneMessage('A janela não abre. Do lado de fora, só existe escuridão.', 4200);
+  else if (hotspot === wallHotspot && state.scene === 'bedroom') showSceneMessage('A parede está descascada. A mancha escura parece mais recente que o resto.', 4200);
+  else if (hotspot === phoneHotspot && ['dresser', 'drawerNoKey'].includes(state.scene)) collectPhone();
   else if (hotspot === drawerHotspot && ['dresser','drawerOpen','drawerNoKey'].includes(state.scene)) routeDrawerAction();
   else if (hotspot === keyHotspot && state.scene === 'drawerOpen') collectKey();
   else if (hotspot === bodyHotspot && state.scene === 'bathroom') showSceneMessage('O cheiro tá horrível.', 4500);
@@ -922,7 +990,8 @@ function bindHoverHint(hotspot, textOrGetter) {
 
 const boundHotspots = [
   doorHandle, fridgeHotspot, freezerHotspot, bathroomDoorHotspot, bedroomDoorHotspot,
-  backHotspot, dresserHotspot, phoneHotspot, drawerHotspot, keyHotspot, bodyHotspot
+  backHotspot, dresserHotspot, bedHotspot, windowHotspot, wallHotspot,
+  phoneHotspot, drawerHotspot, keyHotspot, bodyHotspot
 ].filter(Boolean);
 
 function pointInsideElement(element, clientX, clientY) {
@@ -932,33 +1001,18 @@ function pointInsideElement(element, clientX, clientY) {
 }
 
 function getPointerHotspot(event) {
-  const elements = document.elementsFromPoint(event.clientX, event.clientY);
+  // Usa a geometria real das áreas clicáveis, não a ordem dos elementos na
+  // pilha visual do navegador. A primeira ocorrência vence: objeto antes
+  // de navegação, para que nunca apareçam duas dicas ao mesmo tempo.
   const priority = [
-    fridgeHotspot,
-    freezerHotspot,
-    dresserHotspot,
-    phoneHotspot,
-    drawerHotspot,
-    keyHotspot,
-    bodyHotspot,
-    bathroomDoorHotspot,
-    bedroomDoorHotspot,
-    doorHandle,
-    backHotspot
+    keyHotspot, phoneHotspot, drawerHotspot,
+    freezerHotspot, fridgeHotspot,
+    dresserHotspot, bedHotspot, windowHotspot, wallHotspot,
+    bodyHotspot, bathroomDoorHotspot, bedroomDoorHotspot,
+    doorHandle, backHotspot
   ];
-
-  const hit = new Set(elements.filter(el => boundHotspots.includes(el) && !el.classList.contains('hidden')));
   for (const hotspot of priority) {
-    if (!hit.has(hotspot)) continue;
-
-    // O retorno é sempre secundário. Se a área de algum objeto estiver sob
-    // o cursor, mostramos somente a ação daquele objeto.
-    if (hotspot === backHotspot) {
-      if (pointInsideElement(fridgeHotspot, event.clientX, event.clientY)) continue;
-      if (pointInsideElement(freezerHotspot, event.clientX, event.clientY)) continue;
-      if (pointInsideElement(dresserHotspot, event.clientX, event.clientY)) continue;
-    }
-    return hotspot;
+    if (pointInsideElement(hotspot, event.clientX, event.clientY)) return hotspot;
   }
   return null;
 }
@@ -973,6 +1027,7 @@ function hintTextForHotspot(hotspot) {
   if (hotspot === bathroomDoorHotspot || hotspot === bedroomDoorHotspot) return 'Entrar';
   if (hotspot === backHotspot) return 'Voltar';
   if (hotspot === dresserHotspot) return 'Examinar';
+  if (hotspot === bedHotspot || hotspot === windowHotspot || hotspot === wallHotspot) return 'Examinar';
   if (hotspot === phoneHotspot || hotspot === keyHotspot) return 'Pegar';
   if (hotspot === drawerHotspot) return state.scene === 'drawerNoKey' ? 'Fechar' : 'Abrir';
   if (hotspot === bodyHotspot) return 'Examinar';
@@ -1008,6 +1063,9 @@ bindHoverHint(bathroomDoorHotspot, 'Entrar');
 bindHoverHint(bedroomDoorHotspot, 'Entrar');
 bindHoverHint(backHotspot, 'Voltar');
 bindHoverHint(dresserHotspot, 'Examinar');
+bindHoverHint(bedHotspot, 'Examinar');
+bindHoverHint(windowHotspot, 'Examinar');
+bindHoverHint(wallHotspot, 'Examinar');
 bindHoverHint(phoneHotspot, 'Pegar');
 bindHoverHint(drawerHotspot, () => state.scene === 'drawerNoKey' ? 'Fechar' : 'Abrir');
 bindHoverHint(keyHotspot, 'Pegar');
@@ -1050,4 +1108,6 @@ async function playIntro() {
   intro.classList.add('hidden');
 }
 
+loadProgress();
+renderInventory();
 prepareAudioEvents();
